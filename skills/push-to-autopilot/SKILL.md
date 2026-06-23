@@ -50,10 +50,29 @@ Build the `test_cases` array from the markdown file. Each item:
     {"name": "dashboard_header", "css_selector": "h1.dashboard-title"}
   ],
   "test_data": [
-    {"field": "password", "value": "Test@123", "type": "text"}
+    {"field": "valid_email", "value": "user@example.com", "type": "text"},
+    {"field": "valid_password", "value": "Test@123!", "type": "text"}
   ]
 }
 ```
+
+**Important — test_data values must be real example values, never placeholders.**
+When you see `<placeholder>` in a step (e.g., `enter "<valid_email>" in "el:email_textbox"`),
+extract the field name (strip the `<>`) and generate a realistic example value for `value`.
+Never use the placeholder string itself (e.g., `"<valid_email>"`) as the value.
+
+| Placeholder | Example real value |
+|------------|-------------------|
+| `<email>` / `<valid_email>` | `"user@example.com"` |
+| `<password>` / `<valid_password>` | `"Test@123!"` |
+| `<username>` | `"testuser"` |
+| `<phone>` | `"+1-555-0100"` |
+| `<name>` / `<full_name>` | `"John Doe"` |
+| `<invalid_email>` | `"not-an-email"` |
+| `<invalid_password>` | `"short"` |
+| `<otp>` / `<code>` | `"123456"` |
+
+For domain-specific placeholders not in this table, infer a realistic value from the field name and context.
 
 Required fields besides `test_cases`:
 - `module`, `feature` — from the test case file header

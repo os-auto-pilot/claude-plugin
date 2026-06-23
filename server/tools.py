@@ -8,8 +8,11 @@ the model can call them with minimal arguments.
 from __future__ import annotations
 
 from typing import Any
+import uuid
 
 from mcp.server.fastmcp import FastMCP
+
+from server.request_response_model import FeatureCreationInput, FeatureCreationOutput, ModuleIdByNameOrUniqueKeyInput
 
 from . import client
 
@@ -264,3 +267,89 @@ async def compare_test_runs(
 async def analyze_stack_trace(stack_trace: str) -> dict[str, Any]:
     """Explain a raw stack trace in plain language (root cause + likely fix)."""
     return await client.post_platform("/api/stack_trace/analyze", {"stack_trace": stack_trace})
+
+
+# from super agent
+@mcp.tool("get_feature_id_by_name_or_unique_key")
+async def get_feature_id_by_name_or_unique_key(
+    input: ModuleIdByNameOrUniqueKeyInput,
+) -> FeatureCreationOutput:
+    """
+    Get feature ID by name or unique key.
+
+    Args:
+        input (ModuleIdByNameOrUniqueKeyInput): Input containing details for retrieving feature ID. The identifier field in the input is used to filter features by name or unique key.
+
+    Returns:
+        FeatureCreationOutput: Output containing the details of the feature that matches the provided name or unique key.
+    """
+    headers = {
+        "Authorization": f"Bearer {input.token}",
+        "Content-Type": "application/json",
+    }
+    resp = await _http_get(
+        f"{_get_backend_url()}feature/v1/get-features-by-projectId/{input.projectId}?query={input.identifier}&deleted=false&page=0&size=25&moduleName=",
+        headers=headers,
+    )
+    if resp.status_code == 200:
+        feats = resp.json().get("content", [])
+        if len(feats) == 0:
+            raise Exception(
+                f"No feature found with name or unique key: {input.identifier}"
+            )
+        elif len(feats) == 1:
+            return FeatureCreationOutput(
+                id=uuid.UUID(feats[0].get("id")),
+                name=feats[0].get("featureName"),
+                uniqueKey=feats[0].get("uniqueKey"),
+            )
+        else:
+            for feat in feats:
+                if (
+                    feat.get("featureName").lower() == input.identifier.lower()
+                    or feat.get("uniqueKey").lower() == input.identifier.lower()
+                ):
+                    return FeatureCreationOutput(
+                        id=uuid.UUID(feat.get("id")),
+                        name=feat.get("featureName"),
+                        uniqueKey=feat.get("uniqueKey"),
+                    )
+    else:
+        raise Exception(f"Failed to retrieve features: {resp.text}")
+
+
+@mcp.tool("create_feature")
+async def create_feature(input: FeatureCreationInput) -> FeatureCreationOutput:
+    """
+    Create a feature.
+
+    Args:
+        input (FeatureCreationInput): Input containing details for the feature creation.
+
+    Returns:
+        FeatureCreationOutput: Output containing the details of the created feature.
+    """
+    headers = {
+        "Authorization": f"Bearer {input.token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "featureName": input.name,
+        "description": input.description,
+        "companyId": str(input.companyId),
+        "projectId": str(input.projectId),
+    }
+    resp = await _http_post(
+        f"{_get_backend_url()}feature/v1/save/{input.moduleId}",
+        json=payload,
+        headers=headers,
+    )
+    if resp.status_code == 200:
+        data = resp.json()
+        return FeatureCreationOutput(
+            id=uuid.UUID(data.get("id", str(uuid.uuid4()))),
+            name=data.get("featureName", input.name),
+            uniqueKey=data.get("uniqueKey", str(uuid.uuid4())),
+        )
+    else:
+        raise Exception(f"Failed to create feature: {resp.text}")
