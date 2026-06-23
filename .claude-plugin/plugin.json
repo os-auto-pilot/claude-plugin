@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "oniesoft-test-platform",
+  "displayName": "Oniesoft Test Platform",
+  "version": "0.1.0",
+  "description": "Drive the Oniesoft test platform from Claude Code: generate web/API/mobile test cases, run them (native mobile via Appium + self-healing semantic locators), and analyze failures.",
+  "author": {
+    "name": "Oniesoft"
+  },
+  "keywords": ["testing", "test-automation", "api-testing", "mobile-testing", "qa"],
+  "userConfig": {
+    "platform_api_url": {
+      "type": "string",
+      "title": "Platform API URL",
+      "description": "Base URL of the agentic_ai_be service (test-case generation & analysis).",
+      "default": "http://localhost:8000"
+    },
+    "execution_api_url": {
+      "type": "string",
+      "title": "Execution API URL",
+      "description": "Base URL of the python_tool execution engine (runs test cases / test runs).",
+      "default": "http://localhost:3232"
+    },
+    "platform_api_key": {
+      "type": "string",
+      "title": "API key",
+      "description": "Your personal Oniesoft API key. Generate one in the platform (Users > API Keys). Sent as the x-api-key header.",
+      "sensitive": true,
+      "required": true
+    },
+    "default_project_id": {
+      "type": "string",
+      "title": "Default project ID",
+      "description": "Project UUID used when a tool call doesn't specify one."
+    },
+    "default_user_id": {
+      "type": "string",
+      "title": "Default user ID",
+      "description": "User UUID used when a tool call doesn't specify one (e.g. for runs)."
+    }
+  }
+}
