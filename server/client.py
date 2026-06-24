@@ -20,9 +20,11 @@ import httpx
 # --- Configuration (injected by the plugin's .mcp.json from userConfig) --------
 PLATFORM_API_URL = os.environ.get("PLATFORM_API_URL", "http://localhost:8000").rstrip("/")
 EXECUTION_API_URL = os.environ.get("EXECUTION_API_URL", "http://localhost:3232").rstrip("/")
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8088").rstrip("/")
 API_KEY = os.environ.get("PLATFORM_API_KEY", "")
 DEFAULT_PROJECT_ID = os.environ.get("PLATFORM_PROJECT_ID", "") or None
 DEFAULT_USER_ID = os.environ.get("PLATFORM_USER_ID", "") or None
+DEFAULT_COMPANY_ID = os.environ.get("PLATFORM_COMPANY_ID", "") or None
 
 _TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
 
@@ -78,4 +80,20 @@ async def post_execution(path: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 async def get_execution(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     resp = await get_client().get(f"{EXECUTION_API_URL}{path}", params=params)
+    return _result(resp)
+
+async def post_backend(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    resp = await get_client().post(f"{BACKEND_URL}{path}", json=payload)
+    return _result(resp)
+
+async def get_backend(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    resp = await get_client().get(f"{BACKEND_URL}{path}", params=params)
+    return _result(resp)
+
+async def patch_backend(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    resp = await get_client().patch(f"{BACKEND_URL}{path}", json=payload)
+    return _result(resp)
+
+async def put_backend(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    resp = await get_client().put(f"{BACKEND_URL}{path}", json=payload)
     return _result(resp)

@@ -53,9 +53,30 @@ means it lacks the scope for that action.
 
 ## Tools
 
-`create_test_cases`, `analyze_test_steps`, `create_test_case_from_defect`,
-`run_tests`, `get_run_status`, `stop_tests`, `analyze_test_run`,
-`compare_test_runs`, `analyze_stack_trace`.
+**Test Case Authoring**
+`create_test_cases`, `analyze_test_steps`, `save_claude_test_cases`, `create_test_case_from_defect`
+
+**Test Execution**
+`run_tests`, `run_test_case`, `get_run_status`, `stop_tests`, `wait_for_test_execution_completion`
+
+**Test Run Management**
+`create_test_run`, `clone_test_run`, `schedule_test_run`, `get_test_runs_with_filters`,
+`add_or_remove_test_cases_from_test_run`, `get_test_cases_with_filters_in_a_project`,
+`get_test_cases_uuid_by_unique_keys`
+
+**Failure Analysis**
+`fetch_test_run_results`, `fetch_test_run_failure_details`, `fetch_element_details`, `fetch_util_details`
+
+**Projects & Modules**
+`get_project_id_by_name`, `get_projects_assigned_to_user`, `create_module`,
+`get_module_id_by_name_or_unique_key`, `create_feature`, `get_feature_id_by_name_or_unique_key`
+
+**Elements**
+`create_element`, `update_element`, `get_element_id_by_name_or_unique_key`
+
+**Users & Environments**
+`get_user_details_by_id_or_email_or_unique_key`, `get_environments_assigned_to_user`,
+`get_web_environment_details_by_name_or_unique_key`
 
 ## Develop & test
 

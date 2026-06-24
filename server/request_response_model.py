@@ -1,9 +1,17 @@
 
-from typing import Optional
+from typing import Literal, Optional
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+
+def _normalize_csv_filter(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    parts = [item.strip() for item in value.split(",") if item.strip()]
+    if not parts:
+        return None
+    return ",".join(parts)
 
 class ModuleIdByNameOrUniqueKeyInput(BaseModel):
     token: str = Field(..., description="Authentication token for retrieving module ID")
@@ -37,4 +45,905 @@ class FeatureCreationInput(BaseModel):
     moduleId: uuid.UUID = Field(
         ..., description="ID of the module for which the feature is being created"
     )
-    token: str = Field(..., description="Authentication token for feature creation")
+
+
+class ModuleIdByNameOrUniqueKeyInput(BaseModel):
+    token: str = Field(..., description="Authentication token for retrieving module ID")
+    projectId: uuid.UUID = Field(
+        ..., description="ID of the project for which to retrieve module ID"
+    )
+    identifier: str = Field(
+        ..., description="Name or unique key of the module to retrieve ID for"
+    )
+
+
+class ModuleOutputResponse(BaseModel):
+    id: uuid.UUID = Field(..., description="ID of the module")
+    moduleName: str = Field(..., description="Name of the module")
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key generated for the module"
+    )
+
+class ModuleCreationInput(BaseModel):
+    moduleName: str = Field(
+        ..., description="Name of the module to be created", max_length=20
+    )
+    description: str = Field(
+        ..., description="Description of the module to be created", max_length=600
+    )
+    companyId: uuid.UUID = Field(
+        ..., description="ID of the company for which the module is being created"
+    )
+    projectId: uuid.UUID = Field(
+        ..., description="ID of the project for which the module is being created"
+    )
+
+
+class ProjectIdByNameInput(BaseModel):
+    token: str = Field(
+        ..., description="Authentication token for retrieving admin projects"
+    )
+    companyId: uuid.UUID = Field(
+        ..., description="ID of the company for which to retrieve admin projects"
+    )
+    name: str = Field(
+        ...,
+        description="Name of the project to filter by when retrieving admin projects",
+    )
+
+
+class ProjectIdByNameOutput(BaseModel):
+    id: uuid.UUID = Field(..., description="ID of the admin project")
+    name: str = Field(..., description="Name of the admin project")
+
+
+class GetEnvironmentDetailsByNameOrUniqueKeyInput(BaseModel):
+    """Model representing the input for retrieving environment details by name or unique key"""
+
+    identifier: str = Field(
+        ...,
+        description="Name or unique key of the web environment to retrieve details for",
+    )
+    projectId: uuid.UUID = Field(
+        ..., description="ID of the project for which to retrieve module ID"
+    )
+
+class CreateWebEnvironmentOutput(BaseModel):
+    """Model representing the output of creating a Web Environment"""
+
+    id: uuid.UUID = Field(..., description="ID of the created web environment")
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key generated for the created web environment"
+    )
+    serverUrl: str = Field(..., description="URL of the created web environment")
+    serverName: str = Field(..., description="Name of the created web environment")
+    apiBaseURL: str = Field(
+        ..., description="API base URL of the created web environment"
+    )
+    description: str = Field(
+        ..., description="Description of the created web environment"
+    )
+    basicAuth: bool = Field(
+        default=False, description="Indicates if basic authentication is enabled"
+    )
+    enableBook: bool = Field(
+        default=False,
+        description="Indicates if book is enabled for the web environment",
+    )
+
+class GetUserDetailsByIdOrEmailOrUniqueKeyInput(BaseModel):
+    """Model representing the input for retrieving user details by ID, email, or unique key"""
+
+    identifier: str = Field(
+        ...,
+        description="ID, email, or unique key of the user to retrieve details for",
+    )
+    cmpId: uuid.UUID = Field(
+        ..., description="ID of the company for which to retrieve user details"
+    )
+
+
+class GetUserDetailsOutput(BaseModel):
+    """Model representing the output for retrieving user details by ID, email, or unique key"""
+
+    empId: str = Field(..., description="Unique Key of the user")
+    empName: str = Field(
+        ...,
+        description="Name of the user, can be used in createdBy, author, assignedTo and other user name fields while creating anything",
+    )
+    empEmail: str = Field(..., description="Email of the user")
+    lastName: str = Field(..., description="Last name of the user")
+    empRole: str = Field(..., description="Role of the user")
+    userId: uuid.UUID = Field(..., description="User ID of the user")
+    status: bool = Field(
+        ..., description="Status of the user (active/inactive) true means active"
+    )
+    # deleted: bool = Field(
+    #     ...,
+    #     description="Indicates if the user is deleted or not, true means not deleted",
+    # )
+    projectList: list = Field(
+        ..., description="List of projects associated with the user"
+    )
+    serversList: list = Field(
+        ..., description="List of web and mobile environments associated with the user"
+    )
+
+class TestRunCreationInput(BaseModel):
+    """Model representing the input for creating a test run"""
+
+    testRunName: str = Field(..., description="Name of the test run")
+    projectId: uuid.UUID = Field(
+        ..., description="ID of the project for which the test run is being created"
+    )
+    createdBy: Optional[str] = Field(
+        None, description="Name (EmpName) of the user who created the test run"
+    )
+
+
+class TestRunCreationOutput(BaseModel):
+    """Model representing the output for creating a test run"""
+
+    id: str = Field(..., description="ID of the created test run")
+    testRunName: str = Field(..., description="Name of the created test run")
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key generated for the created test run"
+    )
+
+class TestRunDetailsInput(BaseModel):
+    """Model representing the input for retrieving test run details"""
+
+    nameOrUniqueKey: Optional[str] = Field(
+        None,
+        description="Name or unique key of the test run to retrieve details for",
+    )
+    projectId: uuid.UUID = Field(
+        ..., description="ID of the project for which to retrieve test run details"
+    )
+    status: Optional[str] = Field(
+        None,
+        description="Status filter. Supports single or comma-separated values from New, Completed, Scheduled, Auto Scheduled, Auto Trigger, Skipped, Scheduled Computed, Auto Scheduled Completed, Auto Trigger Completed, In Progress, Aborted",
+    )
+    createdBy: Optional[str] = Field(
+        None, description="Name or Emp Name of the user who created the test run"
+    )
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {
+            "new": "New",
+            "completed": "Completed",
+            "scheduled": "Scheduled",
+            "auto scheduled": "Auto Scheduled",
+            "auto trigger": "Auto Trigger",
+            "skipped": "Skipped",
+            "scheduled computed": "Scheduled Computed",
+            "auto scheduled completed": "Auto Scheduled Completed",
+            "auto trigger completed": "Auto Trigger Completed",
+            "in progress": "In Progress",
+            "aborted": "Aborted",
+        }
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid status value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_TEST_RUN_STATUSES))}"
+            )
+
+        return ",".join(converted)
+
+
+class TestRunDetailsOutput(BaseModel):
+    """Model representing the output for retrieving test run details"""
+
+    id: str = Field(..., description="ID of the test run")
+    testRunName: str = Field(..., description="Name of the test run")
+    uniqueKey: Optional[str] = Field(None, description="Unique key of the test run")
+    status: Optional[
+        Literal[
+            "New",
+            "Completed",
+            "Scheduled",
+            "Auto Scheduled",
+            "Auto Trigger",
+            "Skipped",
+            "Scheduled Computed",
+            "Auto Scheduled Completed",
+            "Auto Trigger Completed",
+            "In Progress",
+            "Aborted",
+        ]
+    ] = Field(None, description="Status of the test run")
+    createdBy: Optional[str] = Field(
+        None, description="Name or Emp Name of the user who created the test run"
+    )
+    testCaseCount: Optional[int] = Field(
+        None, description="Number of test cases in the test run"
+    )
+    automationStatus: Optional[Literal["Completed", "New"]] = Field(
+        None, description="Automation status of the test run"
+    )
+    scheduleTime: Optional[str] = Field(
+        None, description="Scheduled time of the test run"
+    )
+    scheduleDate: Optional[str] = Field(
+        None, description="Scheduled date of the test run"
+    )
+    executedAt: Optional[str] = Field(
+        None, description="Execution date time of the test run"
+    )
+    executeTimeInMillis: Optional[int] = Field(
+        None, description="Execution time in milliseconds of the test run"
+    )
+    passPercentage: Optional[float | str] = Field(
+        None, description="Pass percentage of the test run"
+    )
+
+class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
+    """Model representing the input for adding or removing test cases from a test run"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the test run to which test cases will be added or removed",
+    )
+    projectId: uuid.UUID = Field(
+        ...,
+        description="ID of the project for which to add or remove test cases from the test run",
+    )
+    status: Optional[str] = Field(
+        None,
+        description="Status of the test run. Supports single or comma-separated values from New, Completed, Scheduled, Auto Scheduled, Auto Trigger, Skipped, Scheduled Computed, Auto Scheduled Completed, Auto Trigger Completed, In Progress, Aborted",
+    )
+    nameOrUniqueKey: Optional[str] = Field(
+        None,
+        description="Name or unique key of the test case to be added or removed. Supports a single value or a comma-separated list. Unique keys are resolved directly to UUIDs before updating the test run.",
+    )
+    action: Literal["Add", "Remove"] = Field(
+        ..., description="Action to be performed, accepting only 'Add' or 'Remove'"
+    )
+    testRunName: Optional[str] = Field(
+        None,
+        description="Name of the test run to which test cases will be added or removed",
+    )
+    # testCaseId: Optional[list[uuid.UUID]] = Field(
+    #     ...,
+    #     description="List of test case IDs to be added or removed from the test run. Can get these ids by providing filter criteria like module name, feature name, author, test mode, and test type while adding or removing test cases to the test run.",
+    # )
+    # testCaseIdsToRemove: Optional[list[uuid.UUID]] = Field(
+    #     ..., description="List of test case IDs to be removed from the test run"
+    # )
+    moduleName: Optional[str] = Field(
+        None,
+        description="Module name filter for the test cases to be added or removed from the test run. Supports a single value or a comma-separated list of module names.",
+    )
+    featureName: Optional[str] = Field(
+        None,
+        description="Feature name filter for the test cases to be added or removed from the test run. Supports a single value or a comma-separated list of feature names.",
+    )
+    author: Optional[str] = Field(
+        None,
+        description="Author filter for the test cases to be added or removed from the test run. Supports a single value or a comma-separated list of author names.",
+    )
+    testMode: Optional[str] = Field(
+        None,
+        description="Test mode filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Web', 'Api', or 'Mobile'.",
+    )
+    testType: Optional[str] = Field(
+        None,
+        description="Test type filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Automation', 'Manual', or 'AI Automated'.",
+    )
+    severity: Optional[str] = Field(
+        None,
+        description="Severity filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Minor', 'Major', 'Blocker', or 'Critical'.",
+    )
+
+    @field_validator("nameOrUniqueKey", mode="before")
+    @classmethod
+    def normalize_name_or_unique_key_csv(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_csv_filter(value)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {
+            "new": "New",
+            "completed": "Completed",
+            "scheduled": "Scheduled",
+            "auto scheduled": "Auto Scheduled",
+            "auto trigger": "Auto Trigger",
+            "skipped": "Skipped",
+            "scheduled computed": "Scheduled Computed",
+            "auto scheduled completed": "Auto Scheduled Completed",
+            "auto trigger completed": "Auto Trigger Completed",
+            "in progress": "In Progress",
+            "aborted": "Aborted",
+        }
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid status value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_TEST_RUN_STATUSES))}"
+            )
+
+        return ",".join(converted)
+
+    @field_validator("testMode", mode="before")
+    @classmethod
+    def validate_test_mode_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile"}
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid testMode value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_TEST_MODES))}"
+            )
+
+        return ",".join(converted)
+
+    @field_validator("testType", mode="before")
+    @classmethod
+    def validate_test_type_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {
+            "automation": "Automation",
+            "manual": "Manual",
+            "ai automated": "AI Automated",
+        }
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid testType value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_TEST_TYPES_FOR_TEST_RUN_FILTERS))}"
+            )
+
+        return ",".join(converted)
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def validate_severity_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {
+            "minor": "Minor",
+            "major": "Major",
+            "blocker": "Blocker",
+            "critical": "Critical",
+        }
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid severity value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_SEVERITIES))}"
+            )
+
+        return ",".join(converted)
+
+    @field_validator("moduleName", "featureName", "author", mode="before")
+    @classmethod
+    def normalize_text_filters_csv(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_csv_filter(value)
+
+
+class GetTestCasesUUIDByUniqueKeyInput(BaseModel):
+    """Model representing the input for retrieving test case UUIDs by unique keys in a project"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the project for which to retrieve test case UUIDs",
+    )
+    uniqueKeys: list[str] = Field(
+        ...,
+        description="List of test case unique keys to resolve into UUIDs",
+        min_length=1,
+    )
+    active: Optional[bool] = Field(
+        False, description="Filter test cases by active status, true means active"
+    )
+    deleted: Optional[bool] = Field(
+        False, description="Filter test cases by deleted status, true means deleted"
+    )
+
+class GetEnvironmentsAssignedToUserInput(BaseModel):
+    """Model representing the input for retrieving environments assigned to a user"""
+
+    registerId: uuid.UUID = Field(
+        ...,
+        description="ID or userId of the user to retrieve assigned environments for",
+    )
+    projectId: uuid.UUID = Field(
+        ...,
+        description="ID of the project for which to retrieve assigned environments for the user",
+    )
+
+
+class GetEnvironmentsAssignedToUserOutput(BaseModel):
+    """Model representing the output for retrieving environments assigned to a user"""
+
+    id: uuid.UUID = Field(..., description="ID of the assigned environment")
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key of the assigned environment"
+    )
+    serverName: str = Field(..., description="Name of the assigned environment")
+    serverUrl: str = Field(..., description="URL of the assigned environment")
+    apiBaseURL: str = Field(..., description="API base URL of the assigned environment")
+    description: str = Field(..., description="Description of the assigned environment")
+    basicAuth: bool = Field(
+        ...,
+        description="Indicates if basic authentication is enabled for the assigned environment",
+    )
+    enableBook: bool = Field(
+        ..., description="Indicates if book is enabled for the assigned environment"
+    )
+    deleted: bool = Field(
+        ..., description="Indicates if the assigned environment is deleted or not"
+    )
+
+class GetProjectsAssignedToUserInput(BaseModel):
+    """Model representing the input for retrieving projects assigned to a user"""
+
+    registerId: uuid.UUID = Field(
+        ..., description="ID or userId of the user to retrieve assigned projects for"
+    )
+
+
+class GetProjectsAssignedToUserOutput(BaseModel):
+    """Model representing the output for retrieving projects assigned to a user"""
+
+    id: uuid.UUID = Field(..., description="ID of the assigned project")
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key of the assigned project"
+    )
+    projectName: str = Field(..., description="Name of the assigned project")
+    admin: Optional[str] = Field(
+        ..., description="Name of the admin of the assigned project"
+    )
+    deleted: bool = Field(
+        ..., description="Indicates if the assigned project is deleted or not"
+    )
+    agileAccess: bool = Field(
+        ..., description="Indicates if agile access is enabled for the assigned project"
+    )
+
+
+class GetTestCasesWithFiltersInAProjectInput(BaseModel):
+    """Model representing the input for retrieving test cases with filters in a project"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the project for which to retrieve test cases with filters",
+    )
+    query: Optional[str] = Field(
+        None, description="Query string to search test cases by name or unique key"
+    )
+    active: Optional[bool] = Field(
+        False, description="Filter test cases by active status, false means active"
+    )
+    deleted: Optional[bool] = Field(
+        False, description="Filter test cases by deleted status, true means deleted"
+    )
+    testMode: Optional[str] = Field(
+        None,
+        description="Test mode to filter test cases, accepting only 'Web', 'API', or 'Mobile' or combination of these in comma separated format (e.g. Web,Api) to filter test cases belonging to any of the provided test modes",
+    )
+    author: Optional[str] = Field(
+        None, description="Name of the author to filter test cases by author name"
+    )
+    severity: Optional[str] = Field(
+        None,
+        description="Severity to filter test cases, accepting only 'Minor', 'Major', 'Blocker', or 'Critical' or combination of these in comma separated format (e.g. Minor,Major) to filter test cases belonging to any of the provided severity",
+    )
+    testType: Optional[str] = Field(
+        None,
+        description="Test type to filter test cases, accepting only 'Automation', 'Manual', 'AI Automated', or 'AI Draft' or combination of these in comma separated format (e.g. Automation,Manual) to filter test cases belonging to any of the provided test types",
+    )
+    moduleName: Optional[str] = Field(
+        None,
+        description="Name of the module to filter test cases, can use combination of module names in comma separated format (e.g. Module1,Module2) to filter test cases belonging to any of the provided modules",
+    )
+    featureName: Optional[str] = Field(
+        None, description="Name of the feature to filter test cases"
+    )
+
+    @field_validator("testMode", mode="before")
+    @classmethod
+    def validate_test_mode_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile"}
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid testMode value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_TEST_MODES))}"
+            )
+
+        return ",".join(converted)
+
+    @field_validator("testType", mode="before")
+    @classmethod
+    def validate_test_type_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {
+            "automation": "Automation",
+            "manual": "Manual",
+            "ai automated": "AI Automated",
+            "ai draft": "AI Draft",
+        }
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid testType value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_TEST_TYPES))}"
+            )
+
+        return ",".join(converted)
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def validate_severity_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {
+            "minor": "Minor",
+            "major": "Major",
+            "blocker": "Blocker",
+            "critical": "Critical",
+        }
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid severity value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_SEVERITIES))}"
+            )
+
+        return ",".join(converted)
+
+
+class GetTestCasesWithFiltersInAProjectOutput(BaseModel):
+    """Model representing the output for retrieving test cases with filters in a project"""
+
+    id: uuid.UUID = Field(..., description="ID of the test case")
+    uniqueKey: Optional[str] = Field(None, description="Unique key of the test case")
+    testCaseName: str = Field(..., description="Title of the test case")
+    module: str = Field(..., description="Module of the test case")
+    feature: str = Field(..., description="Feature of the test case")
+    testType: Literal["Automation", "Manual", "AI Automated", "AI Draft"] = Field(
+        ..., description="Test type of the test case"
+    )
+    testMode: Literal["Web", "API", "Mobile"] = Field(
+        ..., description="Test mode of the test case"
+    )
+    author: str = Field(..., description="Author of the test case")
+    severity: Literal["Minor", "Major", "Blocker", "Critical"] = Field(
+        ..., description="Severity of the test case"
+    )
+    createdAt: str = Field(..., description="Creation date of the test case")
+    updatedAt: str = Field(..., description="Last update date of the test case")
+    avgTime: Optional[int] = Field(
+        None, description="Average execution time in seconds of the test case"
+    )
+    jiraDefectId: Optional[str] = Field(
+        None, description="Jira defect ID linked to the test case, if any"
+    )
+
+
+class GetTestCasesWithFiltersInAProjectOutputLarge(BaseModel):
+    """Model representing the output for retrieving test cases with filters in a project with large data"""
+
+    id: uuid.UUID = Field(..., description="ID of the test case")
+    uniqueKey: Optional[str] = Field(None, description="Unique key of the test case")
+    testCaseName: str = Field(..., description="Title of the test case")
+
+class RunTestCaseInput(BaseModel):
+    """Model representing the input for running a test case"""
+
+    testCaseId: uuid.UUID = Field(..., description="ID of the test case to be executed")
+    userId: uuid.UUID = Field(
+        ..., description="ID of the test run in which the test case will be executed"
+    )
+    browserType: Optional[Literal["Chrome", "Firefox", "Edge", "Safari"]] = Field(
+        default="Chrome",
+        description="Browser type in which to execute the test case, accepting only 'Chrome', 'Firefox', 'Edge', or 'Safari'",
+    )
+    envId: uuid.UUID = Field(
+        ..., description="ID of the environment in which to execute the test case"
+    )
+    platform: Optional[str] = Field(
+        "server,server",
+        description="Platform in which to execute the test case, either in server or local. For server 'server, server' and for local 'local, machineId'",
+    )
+
+
+class ScheduleTestRunInput(BaseModel):
+    """Model representing the input for scheduling a test run"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the test run to be scheduled",
+    )
+    projectId: uuid.UUID = Field(
+        ...,
+        description="ID of the project for which to schedule the test run",
+    )
+    scheduledDate: str = Field(
+        ...,
+        description="Scheduled date for the test run execution in YYYY-MM-DD format (e.g. '2024-12-31')",
+    )
+    scheduledTime: str = Field(
+        description="Scheduled time for the test run execution in HH:mm format (e.g. '23:59'). ",
+    )
+    userTimezone: str = Field(
+        ...,
+        description="Timezone of the user scheduling the test run, in IANA format (e.g. 'America/New_York')",
+    )
+
+
+class CloneTestRunInput(BaseModel):
+    """Model representing the input for cloning a test run"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the test run to be cloned",
+    )
+    projectId: uuid.UUID = Field(
+        ...,
+        description="ID of the project for which to clone the test run",
+    )
+    testRunName: str = Field(
+        ...,
+        description="Name of the test run to be cloned",
+    )
+    userName: str = Field(
+        ...,
+        description="Name of the user cloning the test run",
+    )
+    userId: uuid.UUID = Field(
+        ...,
+        description="ID of the user cloning the test run",
+    )
+
+
+class ClonedTestRunOutput(BaseModel):
+    """Model representing the output for cloning a test run"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the newly cloned test run",
+    )
+    testRunName: str = Field(
+        ...,
+        description="Name of the newly cloned test run",
+    )
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key generated for the newly cloned test run"
+    )
+
+
+class ElementUpdateInput(BaseModel):
+    """Model representing the input for updating an element"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the element to be updated",
+    )
+    createdBy: str = Field(
+        ...,
+        description="Name of the user who created the element",
+    )
+    selector: Optional[str] = Field(
+        default="selector",
+        description="Selector like xpath and css for the element to be updated",
+    )
+    testMode: Literal["Web", "Mobile"] = Field(
+        default="Web",
+        description="Test mode for the element, accepting only 'Web', 'API', or 'Mobile'",
+    )
+    feature: Optional[uuid.UUID] = Field(
+        default=None,
+        description="Feature UUID to which the element belongs, if any",
+    )
+    module: Optional[str] = Field(
+        default=None,
+        description="Module NAME to which the element belongs, if any",
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="Name of the element to be updated",
+    )
+    projectId: uuid.UUID = Field(
+        ...,
+        description="ID of the project to which the element belongs",
+    )
+
+
+class ElementOutputResponse(BaseModel):
+    """Model representing the output for an element"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the element",
+    )
+    name: str = Field(
+        ...,
+        description="Name of the element",
+    )
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key generated for the element"
+    )
+    selector: str = Field(
+        ...,
+        description="Selector like xpath and css for the element",
+    )
+
+
+class ElementCreationInput(BaseModel):
+    """Model representing the input for creating an element"""
+
+    name: str = Field(
+        ...,
+        description="Name of the element to be created",
+    )
+    selector: str = Field(
+        ...,
+        description="Selector like xpath and css for the element to be created",
+    )
+    testMode: Literal["Web", "Mobile"] = Field(
+        default="Web",
+        description="Test mode for the element, accepting only 'Web' or 'Mobile'",
+    )
+    feature: uuid.UUID = Field(
+        ...,
+        description="Feature UUID to which the element belongs",
+    )
+    module: str = Field(
+        ...,
+        description="Module name to which the element belongs",
+    )
+    projectId: uuid.UUID = Field(
+        ...,
+        description="ID of the project to which the element belongs",
+    )
+    createdBy: str = Field(
+        ...,
+        description="Name of the user who is creating the element",
+    )
+
+
+class ElementCreationOutput(BaseModel):
+    """Model representing the output for creating an element"""
+
+    id: uuid.UUID = Field(
+        ...,
+        description="ID of the created element",
+    )
+    name: str = Field(
+        ...,
+        description="Name of the created element",
+    )
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key generated for the created element"
+    )
+    createdBy: str = Field(
+        ...,
+        description="Name of the user who created the element",
+    )
+    selector: str = Field(
+        ...,
+        description="Selector like xpath and css for the created element",
+    )
+
+
+class WaitForCaseExecutionInput(BaseModel):
+    """Model representing the input for waiting for execution of a test case"""
+
+    testCaseId: uuid.UUID = Field(
+        ..., description="ID of the test case to wait for execution"
+    )
+
+
+class TestCaseResultOutput(BaseModel):
+    """Model representing the output for waiting for execution of a test case"""
+
+    testCaseId: uuid.UUID = Field(..., description="ID of the test case")
+    status: Literal["Pass", "Fail", "Abort"] = Field(
+        ...,
+        description="Execution status of the test case, which can be 'Pass', 'Fail', 'Abort'",
+    )
+    executeTime: str = Field(
+        ..., description="Execution date and time of the test case"
+    )
+    traceStack: str = Field(
+        ...,
+        description="Complete log of test case with each test step and its execution status",
+    )
+
+

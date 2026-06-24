@@ -6,7 +6,9 @@
       "env": {
         "PLATFORM_API_URL": "${user_config.platform_api_url}",
         "EXECUTION_API_URL": "${user_config.execution_api_url}",
+        "BACKEND_URL": "${user_config.backend_url}",
         "PLATFORM_API_KEY": "${user_config.platform_api_key}",
+        "PLATFORM_COMPANY_ID": "${user_config.default_company_id}",
         "PLATFORM_PROJECT_ID": "${user_config.default_project_id}",
         "PLATFORM_USER_ID": "${user_config.default_user_id}"
       }

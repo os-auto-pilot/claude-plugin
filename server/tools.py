@@ -7,12 +7,13 @@ the model can call them with minimal arguments.
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from typing import Any, List, Optional, Union
 import uuid
 
 from mcp.server.fastmcp import FastMCP
 
-from server.request_response_model import FeatureCreationInput, FeatureCreationOutput, ModuleIdByNameOrUniqueKeyInput
+from server.request_response_model import *
 
 from . import client
 
@@ -225,48 +226,171 @@ async def stop_tests(execution_id: str) -> dict[str, Any]:
 
 # ----------------------------------------------------------------- analysis ----
 @mcp.tool()
-async def analyze_test_run(
-    test_run_id: str,
-    user_input: str = "",
-    project_id: str | None = None,
-    user_id: str | None = None,
-) -> dict[str, Any]:
-    """Analyze a completed test run: top failure reasons (from stack traces) or
-    an answer to a specific question (user_input). Leave user_input empty for the
-    default top-3-failures summary.
+async def fetch_test_run_results(test_run_id: str) -> dict[str, Any]:
+    """Fetch all test case results for a completed test run directly from the backend.
+
+    Paginates through all results and returns aggregated stats plus a list of
+    failed cases (with IDs and names) ready to pass to fetch_test_run_failure_details.
+
+    Returns:
+        run_name, overall totals (total/pass/fail/skip), breakdowns by feature /
+        module / severity / test_mode / author, and failed_cases list.
     """
-    payload = {
-        "test_run_id": test_run_id,
-        "user_input": user_input or None,
-        "projectId": _project(project_id),
-        "userId": _user(user_id) or "",
-        "token": "",
+    page = 0
+    all_cases: list[dict] = []
+    run_name = "Unknown Run"
+
+    while True:
+        params = {
+            "query": "",
+            "testMode": "",
+            "featureName": "",
+            "moduleName": "",
+            "author": "",
+            "severity": "",
+            "testType": "",
+            "status": "",
+            "jiraIssueFixed": "false",
+            "page": page,
+            "size": 25,
+        }
+        resp = await client.get_backend(
+            f"/testrun/v1/{test_run_id}/ordered-test-cases", params=params
+        )
+        if resp["status_code"] != 200:
+            raise ValueError(f"Failed to fetch test run results: {resp['data']}")
+
+        data = resp["data"]
+        content = data.get("content", [])
+        if content and run_name == "Unknown Run":
+            run_name = content[0].get("testRunName", "Unknown Run")
+        all_cases.extend(content)
+        if data.get("last", True):
+            break
+        page += 1
+
+    # Aggregate stats
+    totals = {"total": 0, "pass": 0, "fail": 0, "skip": 0}
+    by_feature: dict[str, dict] = {}
+    by_module: dict[str, dict] = {}
+    by_severity: dict[str, dict] = {}
+    by_test_mode: dict[str, dict] = {}
+    by_author: dict[str, dict] = {}
+    failed_cases: list[dict] = []
+
+    def _inc(bucket: dict[str, dict], key: str, status: str) -> None:
+        if key not in bucket:
+            bucket[key] = {"total": 0, "pass": 0, "fail": 0, "skip": 0}
+        bucket[key]["total"] += 1
+        if status in bucket[key]:
+            bucket[key][status] += 1
+
+    for case in all_cases:
+        status = (case.get("status") or "").lower()
+        totals["total"] += 1
+        if status in totals:
+            totals[status] += 1
+        _inc(by_feature, case.get("feature", ""), status)
+        _inc(by_module, case.get("module", ""), status)
+        _inc(by_severity, case.get("severity", ""), status)
+        _inc(by_test_mode, case.get("testMode", ""), status)
+        _inc(by_author, case.get("author", ""), status)
+        if status == "fail":
+            failed_cases.append({"id": case["id"], "name": case.get("testCaseName", "")})
+
+    return {
+        "run_name": run_name,
+        **totals,
+        "by_feature": by_feature,
+        "by_module": by_module,
+        "by_severity": by_severity,
+        "by_test_mode": by_test_mode,
+        "by_author": by_author,
+        "failed_cases": failed_cases,
     }
-    return await client.post_platform("/api/test_run/ask", payload)
 
 
 @mcp.tool()
-async def compare_test_runs(
-    run_ids: list[str],
-    user_input: str = "",
-    project_id: str | None = None,
-    user_id: str | None = None,
-) -> dict[str, Any]:
-    """Compare two or more test runs: differences in failures, timing, results."""
-    payload = {
-        "run_ids": run_ids,
-        "user_input": user_input or None,
-        "projectId": _project(project_id),
-        "userId": _user(user_id) or "",
-        "token": "",
-    }
-    return await client.post_platform("/api/test_run/compare", payload)
+async def fetch_test_run_failure_details(failed_case_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch trace stacks and step details for a list of failed test case IDs.
+
+    Call this after fetch_test_run_results to get the raw failure data Claude
+    needs to identify root causes. Pass the 'id' values from failed_cases.
+
+    Returns a list of dicts: case_id, trace_stack (last 500 chars), test_data, test_steps.
+    """
+    results: list[dict] = []
+    for case_id in failed_case_ids:
+        resp = await client.get_backend(
+            f"/testrun/v1/get-test-data-result/{case_id}"
+        )
+        if resp["status_code"] != 200:
+            results.append({"case_id": case_id, "error": str(resp["data"])})
+            continue
+        raw = resp["data"]
+        if not isinstance(raw, list):
+            raw = [raw] if raw else []
+        for item in raw:
+            if str(item.get("status", "")).lower() != "fail":
+                continue
+            trace = str(item.get("traceStack") or "")
+            test_steps = ""
+            trac = item.get("testRunAndCase")
+            if isinstance(trac, dict):
+                test_steps = str(trac.get("testSteps") or "")
+            results.append({
+                "case_id": case_id,
+                "data_id": item.get("id", ""),
+                "trace_stack": trace[-500:] if len(trace) > 500 else trace,
+                "test_data": str(item.get("testData") or ""),
+                "test_steps": test_steps,
+            })
+    return results
 
 
 @mcp.tool()
-async def analyze_stack_trace(stack_trace: str) -> dict[str, Any]:
-    """Explain a raw stack trace in plain language (root cause + likely fix)."""
-    return await client.post_platform("/api/stack_trace/analyze", {"stack_trace": stack_trace})
+async def fetch_element_details(element_id: str) -> dict[str, Any]:
+    """Fetch UI element details by ID (name, selector, module, feature, testMode).
+
+    Call this when a failure trace references an element ID to understand which
+    UI element was involved in the failure.
+    """
+    resp = await client.get_backend(f"/elements/v1/{element_id}")
+    if resp["status_code"] != 200:
+        if resp["status_code"] == 500 or "JWT" in str(resp["data"]):
+            return {"error": f"Cannot fetch element {element_id}: invalid token or server error"}
+        raise ValueError(f"Failed to fetch element details: {resp['data']}")
+    el = resp["data"]
+    return {
+        "id": el.get("id"),
+        "name": el.get("name"),
+        "selector": el.get("selector"),
+        "module": el.get("module"),
+        "feature": el.get("feature"),
+        "testMode": el.get("testMode"),
+    }
+
+
+@mcp.tool()
+async def fetch_util_details(util_id: str) -> dict[str, Any]:
+    """Fetch shared utility/step details by ID (name, steps, test data, testMode).
+
+    Call this when a failure trace references a utility ID to understand which
+    shared step sequence was involved in the failure.
+    """
+    resp = await client.get_backend(f"/utils/v1/get-util/{util_id}")
+    if resp["status_code"] != 200:
+        if resp["status_code"] == 500 or "JWT" in str(resp["data"]):
+            return {"error": f"Cannot fetch util {util_id}: invalid token or server error"}
+        raise ValueError(f"Failed to fetch util details: {resp['data']}")
+    u = resp["data"]
+    return {
+        "id": u.get("id"),
+        "utilName": u.get("utilName"),
+        "utilTestCaseSteps": u.get("utilTestCaseSteps"),
+        "data": u.get("data"),
+        "testMode": u.get("testMode"),
+    }
 
 
 # from super agent
@@ -283,16 +407,12 @@ async def get_feature_id_by_name_or_unique_key(
     Returns:
         FeatureCreationOutput: Output containing the details of the feature that matches the provided name or unique key.
     """
-    headers = {
-        "Authorization": f"Bearer {input.token}",
-        "Content-Type": "application/json",
-    }
-    resp = await _http_get(
-        f"{_get_backend_url()}feature/v1/get-features-by-projectId/{input.projectId}?query={input.identifier}&deleted=false&page=0&size=25&moduleName=",
-        headers=headers,
+    resp = await client.get_backend(
+        f"/feature/v1/get-features-by-projectId/{input.projectId}?query={input.identifier}&deleted=false&page=0&size=25&moduleName=",
     )
-    if resp.status_code == 200:
-        feats = resp.json().get("content", [])
+
+    if resp['status_code'] == 200:
+        feats = resp['data'].get("content", [])
         if len(feats) == 0:
             raise Exception(
                 f"No feature found with name or unique key: {input.identifier}"
@@ -315,7 +435,7 @@ async def get_feature_id_by_name_or_unique_key(
                         uniqueKey=feat.get("uniqueKey"),
                     )
     else:
-        raise Exception(f"Failed to retrieve features: {resp.text}")
+        raise Exception(f"Failed to retrieve features: {resp['data']}")
 
 
 @mcp.tool("create_feature")
@@ -329,27 +449,927 @@ async def create_feature(input: FeatureCreationInput) -> FeatureCreationOutput:
     Returns:
         FeatureCreationOutput: Output containing the details of the created feature.
     """
-    headers = {
-        "Authorization": f"Bearer {input.token}",
-        "Content-Type": "application/json",
-    }
     payload = {
         "featureName": input.name,
         "description": input.description,
         "companyId": str(input.companyId),
         "projectId": str(input.projectId),
     }
-    resp = await _http_post(
-        f"{_get_backend_url()}feature/v1/save/{input.moduleId}",
-        json=payload,
-        headers=headers,
+    resp = await client.post_platform(
+        f"/feature/v1/save/{input.moduleId}",
+        payload
     )
-    if resp.status_code == 200:
-        data = resp.json()
+    if resp['status_code'] == 200:
+        data = resp['data']
         return FeatureCreationOutput(
             id=uuid.UUID(data.get("id", str(uuid.uuid4()))),
             name=data.get("featureName", input.name),
             uniqueKey=data.get("uniqueKey", str(uuid.uuid4())),
         )
     else:
-        raise Exception(f"Failed to create feature: {resp.text}")
+        raise Exception(f"Failed to create feature: {resp['data']}")
+
+
+@mcp.tool("create_module")
+async def create_module(input: ModuleCreationInput) -> ModuleOutputResponse:
+    """
+    Create a module.
+
+    Args:
+        input (ModuleCreationInput): Input containing details for the module creation.
+
+    Returns:
+        ModuleOutputResponse: Output containing the details of the created module.
+    """
+    payload = {
+        "moduleName": input.moduleName,
+        "description": input.description,
+        "companyId": str(input.companyId),
+        "projectId": str(input.projectId),
+    }
+    resp = await client.post_backend(
+        f"/module/v1/save",
+        payload
+    )
+    if resp['status_code'] == 200:
+        data = resp['data']
+        return ModuleOutputResponse(
+            id=uuid.UUID(data.get("id", str(uuid.uuid4()))),
+            moduleName=data.get("moduleName", input.moduleName),
+            uniqueKey=data.get("uniqueKey", str(uuid.uuid4())),
+        )
+    else:
+        raise Exception(f"Failed to create module: {resp['data']}")
+
+
+@mcp.tool("get_module_id_by_name_or_unique_key")
+async def get_module_id_by_name_or_unique_key(
+    input: ModuleIdByNameOrUniqueKeyInput,
+) -> ModuleOutputResponse:
+    """
+    Get module ID by name or unique key.
+
+    Args:
+        input (ModuleIdByNameOrUniqueKeyInput): Input containing details for retrieving module ID. The identifier field in the input is used to filter modules by name or unique key.
+
+    Returns:
+        ModuleOutputResponse: Output containing the details of the module that matches the provided name or unique key.
+    """
+    resp = await client.get_backend(
+        f"/module/v1/get-page-modules/{input.projectId}?query={input.identifier.lower()}&deleted=false&page=0&size=25",
+    )
+    if resp['status_code'] == 200:
+        mods = resp['data'].get("content", [])
+        if len(mods) == 0:
+            raise Exception(
+                f"No module found with name or unique key: {input.identifier}"
+            )
+        elif len(mods) == 1:
+            return ModuleOutputResponse(
+                id=uuid.UUID(mods[0].get("id")),
+                moduleName=mods[0].get("moduleName"),
+                uniqueKey=mods[0].get("uniqueKey"),
+            )
+        else:
+            for mod in mods:
+                if (
+                    mod.get("moduleName").lower() == input.identifier.lower()
+                    or mod.get("uniqueKey").lower() == input.identifier.lower()
+                ):
+                    return ModuleOutputResponse(
+                        id=uuid.UUID(mod.get("id")),
+                        moduleName=mod.get("moduleName"),
+                        uniqueKey=mod.get("uniqueKey"),
+                    )
+    else:
+        raise Exception(f"Failed to retrieve modules: {resp['data']}")
+    
+    
+@mcp.tool("get_project_id_by_name")
+async def get_project_id_by_name(
+    input: ProjectIdByNameInput,
+) -> list[ProjectIdByNameOutput]:
+    """
+    Get a list of admin projects for the user.
+
+    Args:
+        input (ProjectIdByNameInput): Input containing details for retrieving admin projects. The name field in the input is used to filter projects by name.
+    Returns:
+        list: A list of admin projects that match the provided name.
+    """
+    resp = await client.get_backend(
+        f"/projects/v1/getprojectsbybranchid/{input.companyId}",
+    )
+    if resp['status_code'] == 200:
+        matching_projects: list[ProjectIdByNameOutput] = []
+        target_name = input.name.strip().lower()
+
+        for proj in resp['data']:
+            project_name = proj.get("projectName", "").strip().lower()
+            project_id = proj.get("id")
+            if not project_name or not project_id:
+                continue
+            if project_name.lower() != target_name:
+                continue
+
+            matching_projects.append(
+                ProjectIdByNameOutput(
+                    id=uuid.UUID(str(project_id)),
+                    name=project_name,
+                )
+            )
+
+        return matching_projects
+    else:
+        raise Exception(f"Failed to retrieve admin projects: {resp.text}")
+
+
+@mcp.tool("get_web_environment_details_by_name_or_unique_key")
+async def get_web_environment_details_by_name_or_unique_key(
+    input: GetEnvironmentDetailsByNameOrUniqueKeyInput,
+) -> Union[CreateWebEnvironmentOutput, List[str]]:
+    """
+    Get web environment details by name or unique key.
+
+    Args:
+        input (GetEnvironmentDetailsByNameOrUniqueKeyInput): Input containing details for retrieving web environment details. The identifier field in the input is used to filter web environments by name or unique key.
+
+    Returns:
+        CreateWebEnvironmentOutput: Output containing the details of the web environment that matches the provided name or unique key.
+        List[str]: List of all environment names in the project when no match is found for the given identifier.
+    """   
+    resp = await client.get_backend(
+        f"/servers/v1/list-servers?projectId={input.projectId}&deleted=false",
+    )
+    if resp['status_code'] == 200:
+        envs = resp['data']
+        if len(envs) == 0:
+            raise Exception("No environments in the project")
+        else:
+            for env in envs:
+                if (
+                    env.get("serverName", "").lower() == input.identifier.lower()
+                    or env.get("uniqueKey", "").lower() == input.identifier.lower()
+                ):
+                    return CreateWebEnvironmentOutput(
+                        id=uuid.UUID(env.get("id")),
+                        serverName=env.get("serverName"),
+                        uniqueKey=env.get("uniqueKey"),
+                        apiBaseURL=env.get("apiBaseURL", ""),
+                        serverUrl=env.get("serverUrl", ""),
+                        description=env.get("description", ""),
+                        basicAuth=env.get("basicAuth", False),
+                        enableBook=env.get("enableBook", False),
+                    )
+            else:
+                return [env.get("serverName", "") for env in envs]
+    else:
+        raise Exception(f"Failed to retrieve web environments: {resp['data']}")
+
+
+@mcp.tool("get_user_details_by_id_or_email_or_unique_key")
+async def get_user_details_by_id_or_email_or_unique_key(
+    input: GetUserDetailsByIdOrEmailOrUniqueKeyInput,
+) -> GetUserDetailsOutput:
+    """
+    Get user details by ID, email, or unique key.
+
+    Args:
+        input (GetUserDetailsByIdOrEmailOrUniqueKeyInput): Input containing details for retrieving user details. The identifier field in the input is used to filter users by ID, email, or unique key.
+
+    Returns:
+        GetUserDetailsOutput: Output containing the details of the user that matches the provided ID, email, or unique key.
+
+    """
+    resp = await client.get_backend(
+        f"/adminview/v1/users-by-branch-role?cmpId={input.cmpId}&query={input.identifier}&page=0&size=25"
+    )
+    if resp['status_code'] == 200:
+        users = resp['data'].get("content", [])
+        if len(users) == 0:
+            raise Exception(
+                f"No user found with ID, email, or unique key: {input.identifier}"
+            )
+        matched_user = None
+        if len(users) == 1:
+            matched_user = users[0]
+        else:
+            for user in users:
+                if (
+                    str(user.get("email", "")).lower() == input.identifier.lower()
+                    or str(user.get("empId", "")).lower() == input.identifier.lower()
+                    or str(user.get("userId", "")).lower() == input.identifier.lower()
+                    or str(user.get("empName", "")).lower() == input.identifier.lower()
+                ):
+                    matched_user = user
+                    break
+
+        if matched_user is None:
+            raise Exception(
+                f"No exact user match found in search results for: {input.identifier}"
+            )
+
+        return GetUserDetailsOutput(**matched_user)
+    else:
+        raise Exception(f"Failed to retrieve users: {resp['data']}")
+
+@mcp.tool("create_test_run")
+async def create_test_run(input: TestRunCreationInput) -> TestRunCreationOutput:
+    """
+    Create a new test run.
+
+    Args:
+        input (TestRunCreationInput): Input containing details for creating a test run.
+        In input the createdBy field will be used to set the user who created the test run, you can use the user name from the session context
+
+    Returns:
+        TestRunCreationOutput: Output containing details of the created test run.
+    """
+    payload = input.model_dump(exclude={"token"}, mode="json", exclude_none=True)
+    resp = await client.post_backend(
+        f"/testrun/v1/createtestrun",
+        json=payload,
+    )
+    if resp['status_code'] == 200:
+        data = resp['data']
+        return TestRunCreationOutput(**data)
+    else:
+        raise Exception(f"Failed to create test run: {resp['data']}")
+
+
+@mcp.tool("get_test_runs_with_filters")
+async def get_test_runs_with_filters(
+    input: TestRunDetailsInput,
+) -> List[TestRunDetailsOutput]:
+    """
+    Get list of test runs by applying various filters. The nameOrUniqueKey field in the input is used to filter test runs by name or unique key. Additional filters such as status and created by can also be applied to narrow down the search results.
+
+    Args:
+        input (TestRunDetailsInput): Input containing details for retrieving test run details. The nameOrUniqueKey field in the input is used to filter test runs by name or unique key.
+
+    Returns:
+        List[TestRunDetailsOutput]: Output containing the details of the test runs that match the provided name or unique key.
+    """
+
+    base_params = {
+        "projectId": str(input.projectId),
+        "query": input.nameOrUniqueKey,
+        "status": input.status,
+        "createdBy": input.createdBy,
+        "deleted": "false",
+    }
+    base_params = {k: v for k, v in base_params.items() if v not in (None, "")}
+
+    page = 0
+    size = 200
+    collected: list[dict[str, Any]] = []
+
+    while True:
+        params = {**base_params, "page": str(page), "size": str(size)}
+        resp = await client.get_backend(
+            f"/testrun/v1/gettestrunbyid",
+            params=params,
+        )
+
+        if resp['status_code'] != 200:
+            raise Exception(f"Failed to retrieve test runs: {resp['data']}")
+
+        body = resp['data'] or {}
+        chunk = body.get("content", []) or []
+        collected.extend(chunk)
+
+        # Stop conditions for different pagination response styles
+        is_last = body.get("last")
+        total_pages = body.get("totalPages")
+        if is_last is True:
+            break
+        if isinstance(total_pages, int) and page >= (total_pages - 1):
+            break
+        if len(chunk) < size:
+            break
+        if not chunk:
+            break
+
+        page += 1
+
+    if len(collected) == 0:
+        if input.nameOrUniqueKey:
+            raise Exception(
+                f"No test run found with name or unique key: {input.nameOrUniqueKey}"
+            )
+        raise Exception("No test runs found for the provided filters")
+
+    return [TestRunDetailsOutput(**test_run) for test_run in collected]
+
+
+@mcp.tool("add_or_remove_test_cases_from_test_run")
+async def add_or_remove_test_cases_from_test_run(
+    input: AddOrRemoveTestCasesFromTestRunInput,
+) -> str:
+    """
+    Add or remove test cases from a test run.
+    We will first filter test cases by the provided criteria and fetch their IDs, then we will add or remove the test cases from the test run based on the action specified in the input (add or remove).
+
+    Args:
+        input (AddOrRemoveTestCasesFromTestRunInput): Input containing details for adding or removing test cases from a test run. The action field in the input is used to specify whether to add or remove the specified test cases from the test run.
+    Returns:
+        str: A message indicating the successful addition or removal of test cases from the test run.
+    """
+    # add_case_ids = [str(case_id) for case_id in (input.testCaseId or [])]
+    # remove_case_ids = [str(case_id) for case_id in (input.testCaseIdsToRemove or [])]
+    add_case_ids: list[str] = []
+    remove_case_ids: list[str] = []
+    action = input.action.lower()
+
+    def _split_csv(value: Optional[str]) -> list[str]:
+        if not value:
+            return []
+        return [item.strip() for item in value.split(",") if item.strip()]
+
+    def _looks_like_unique_key(value: str) -> bool:
+        normalized = value.strip().upper()
+        prefix = "TC-"
+        return normalized.startswith(prefix) and normalized[len(prefix) :].isdigit()
+
+    def _append_unique(values: list[str], additions: list[str]) -> list[str]:
+        seen = set(values)
+        for addition in additions:
+            if addition not in seen:
+                values.append(addition)
+                seen.add(addition)
+        return values
+
+    query_terms = _split_csv(input.nameOrUniqueKey)
+    unique_key_terms = [term for term in query_terms if _looks_like_unique_key(term)]
+    name_terms = [term for term in query_terms if term not in unique_key_terms]
+
+    if unique_key_terms:
+        print(f"Resolving unique keys to IDs for: {unique_key_terms}")
+        resolved_unique_key_ids = await get_test_cases_uuid_by_unique_keys(
+            GetTestCasesUUIDByUniqueKeyInput(
+                id=input.projectId,
+                uniqueKeys=unique_key_terms,
+                active=False,
+                deleted=False,
+                token=input.token,
+            )
+        )
+        resolved_unique_key_ids_as_str = [
+            str(case_id) for case_id in resolved_unique_key_ids
+        ]
+        if action == "add":
+            add_case_ids = _append_unique(add_case_ids, resolved_unique_key_ids_as_str)
+        elif action == "remove":
+            remove_case_ids = _append_unique(
+                remove_case_ids, resolved_unique_key_ids_as_str
+            )
+
+    filter_base_params = {
+        "query": ",".join(name_terms) if name_terms else None,
+        "testMode": input.testMode,
+        "featureName": input.featureName,
+        "moduleName": input.moduleName,
+        "author": input.author,
+        "testType": input.testType,
+        "severity": input.severity,
+    }
+    filter_base_params = {
+        k: v for k, v in filter_base_params.items() if v not in (None, "")
+    }
+
+    should_fetch_filtered_test_cases = bool(filter_base_params)
+    if should_fetch_filtered_test_cases:
+        page = 0
+        size = 200
+        filtered_test_case_ids: list[str] = []
+
+        while True:
+            filter_params = {
+                **filter_base_params,
+                "page": str(page),
+                "size": str(size),
+            }
+            print(f"Fetching test cases for filtering with params: {filter_params}")
+
+            filter_resp = await client.get_backend(
+                f"/testrun/v1/edittestrun/{input.id}/{input.projectId}",
+                params=filter_params,
+            )
+            if filter_resp['status_code'] != 200:
+                raise Exception(
+                    f"Failed to retrieve test cases for filtering: {filter_resp['data']}"
+                )
+
+            body = filter_resp['data'] or {}
+            data = body.get("data", {}) if isinstance(body, dict) else {}
+            test_cases = data.get("testCases", []) if isinstance(data, dict) else []
+
+            filtered_test_case_ids.extend(
+                str(test_case.get("id"))
+                for test_case in test_cases
+                if test_case.get("id")
+            )
+
+            # Stop conditions for different response pagination styles
+            pages = body.get("pagination", {}) if isinstance(body, dict) else {}
+            is_last = pages.get(
+                "last", pages.get("last") if isinstance(pages, dict) else None
+            )
+            total_pages = pages.get(
+                "totalPages",
+                pages.get("totalPages") if isinstance(pages, dict) else None,
+            )
+
+            if is_last is True:
+                break
+            if isinstance(total_pages, int) and page >= (total_pages - 1):
+                break
+            if not test_cases:
+                break
+            if len(test_cases) < size:
+                break
+
+            page += 1
+
+        if len(filtered_test_case_ids) == 0:
+            raise Exception(
+                f"No test case found with the provided criteria to {input.action}"
+            )
+
+        if action == "add":
+            add_case_ids = filtered_test_case_ids
+        elif action == "remove":
+            remove_case_ids = filtered_test_case_ids
+
+    if action == "add" and not add_case_ids:
+        raise Exception("No test case IDs were resolved to add to the test run")
+    if action == "remove" and not remove_case_ids:
+        raise Exception("No test case IDs were resolved to remove from the test run")
+
+    payload = {
+        "testCaseId": add_case_ids,
+        "testCaseIdsToRemove": remove_case_ids,
+        "testRunName": input.testRunName,
+        "status": input.status,
+        "id": str(input.id),
+    }
+    resp = await client.post_backend(
+        f"/testrun/v1/addtestrun",
+        json=payload,
+    )
+    if resp['status_code'] == 200:
+        return f"Test cases successfully {action}ed the test run with ID: {input.id}"
+    else:
+        raise Exception(f"Failed to update test cases in test run: {resp['data']}")
+
+
+@mcp.tool("get_environments_assigned_to_user")
+async def get_environments_assigned_to_user(
+    input: GetEnvironmentsAssignedToUserInput,
+) -> List[GetEnvironmentsAssignedToUserOutput]:
+    """
+    Get list of environments assigned to a user. The registerId field in the input is used to identify the user for which assigned environments will be retrieved.
+
+    Args:
+        input (GetEnvironmentsAssignedToUserInput): Input containing details for retrieving environments assigned to a user. The registerId field in the input is used to identify the user for which assigned environments will be retrieved.
+
+    Returns:
+        List[GetEnvironmentsAssignedToUserOutput]: Output containing the list of environments assigned to the specified user.
+    """
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {input.token}",
+    }
+    resp = await client.get_backend(
+        f"/servers/v1/servers-by-user/{input.registerId}/{input.projectId}/true",
+        headers=headers,
+    )
+    if resp['status_code'] == 200:
+        environments = resp['data']
+        if len(environments) == 0:
+            return []
+        return [GetEnvironmentsAssignedToUserOutput(**env) for env in environments]
+    else:
+        raise Exception(
+            f"Failed to retrieve environments assigned to user: {resp['data']}"
+        )
+
+
+@mcp.tool("get_projects_assigned_to_user")
+async def get_projects_assigned_to_user(
+    input: GetProjectsAssignedToUserInput,
+) -> List[GetProjectsAssignedToUserOutput]:
+    """
+    Get list of projects assigned to a user. The registerId field in the input is used to identify the user for which assigned projects will be retrieved.
+
+    Args:
+        input (GetProjectsAssignedToUserInput): Input containing details for retrieving projects assigned to a user. The registerId field in the input is used to identify the user for which assigned projects will be retrieved.
+
+    Returns:
+        List[GetProjectsAssignedToUserOutput]: Output containing the list of projects assigned to the specified user.
+    """
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {input.token}",
+    }
+    resp = await client.get_backend(
+        f"/projectusers/v1/getassignregisters/{input.registerId}",
+        headers=headers,
+    )
+    print(
+        f"Response from get projects assigned to user API: {resp['status_code']} - {resp['data']}"
+    )
+    if resp['status_code'] == 200:
+        projects = resp['data']
+        if len(projects) == 0:
+            return []
+        return [GetProjectsAssignedToUserOutput(**proj) for proj in projects]
+    else:
+        raise Exception(f"Failed to retrieve projects assigned to user: {resp['data']}")
+
+
+@mcp.tool("get_test_cases_with_filters_in_a_project")
+async def get_test_cases_with_filters_in_a_project(
+    input: GetTestCasesWithFiltersInAProjectInput,
+) -> (
+    List[GetTestCasesWithFiltersInAProjectOutput]
+    | List[GetTestCasesWithFiltersInAProjectOutputLarge]
+):
+    """
+    Get list of test cases in a project by applying various filters.
+    active and deleted filters in input are used to include/exclude active and deleted test cases respectively, active flag false means active, deleted flag false means not deleted.
+    """
+
+    base_params = {
+        "id": str(input.id),
+        "query": input.query,
+        "testMode": input.testMode,
+        "featureName": input.featureName,
+        "moduleName": input.moduleName,
+        "author": input.author,
+        "testType": input.testType,
+        "active": False,
+        "deleted": input.deleted,
+    }
+    base_params = {k: v for k, v in base_params.items() if v not in (None, "")}
+
+    page = 0
+    size = 200
+    collected: list[dict[str, Any]] = []
+
+    try:
+        while True:
+            params = {
+                **base_params,
+                "page": str(page),
+                "size": str(size),
+            }
+
+            resp = await client.get_backend(
+                f"/testcases/v1/getForProject",
+                params=params,
+            )
+
+            if resp['status_code'] != 200:
+                raise Exception(f"Failed to retrieve test cases: {resp['data']}")
+
+            body = resp['data'] or {}
+            test_cases = body.get("content", []) if isinstance(body, dict) else []
+            collected.extend(test_cases)
+
+            is_last = body.get("last")
+            total_pages = body.get("totalPages")
+
+            if is_last is True:
+                break
+            if isinstance(total_pages, int) and page >= (total_pages - 1):
+                break
+            if not test_cases:
+                break
+            if len(test_cases) < size:
+                break
+
+            page += 1
+
+        if len(collected) == 0:
+            if input.query:
+                raise Exception(
+                    f"No test case found with name or unique key: {input.query} in the project with ID: {input.id}"
+                )
+            raise Exception(
+                f"No test cases found for the provided filters in the project with ID: {input.id}"
+            )
+
+        if len(collected) > 10:
+            return [
+                GetTestCasesWithFiltersInAProjectOutputLarge(**test_case)
+                for test_case in collected
+            ]
+
+        return [
+            GetTestCasesWithFiltersInAProjectOutput(**test_case)
+            for test_case in collected
+        ]
+
+    except Exception as e:
+        raise Exception(f"An error occurred while retrieving test cases: {str(e)}")
+
+
+@mcp.tool("get_test_cases_uuid_by_unique_keys")
+async def get_test_cases_uuid_by_unique_keys(
+    input: GetTestCasesUUIDByUniqueKeyInput,
+) -> List[uuid.UUID]:
+    """
+    Get list of test cases UUIDs in a project by taking list of unique keys of the test cases.
+    This method takes list of unique keys of test cases and returns list of test case uuids.
+
+    Args:
+        input (List[str]): List of unique keys of the test cases.
+
+    Returns:
+        List[uuid.UUID]: List of UUIDs corresponding to the provided unique keys.
+    """
+    unique_keys = [key.strip() for key in input.uniqueKeys if key and key.strip()]
+    if not unique_keys:
+        raise Exception("At least one non-empty unique key is required")
+
+    semaphore = asyncio.Semaphore(5)
+
+    async def _fetch_uuid_for_key(unique_key: str) -> uuid.UUID:
+        params = {
+            "id": str(input.id),
+            "query": unique_key,
+            "deleted": input.deleted,
+            "page": "0",
+            "size": "50",
+            "active": input.active,
+        }
+        params = {k: v for k, v in params.items() if v not in (None, "")}
+
+        async with semaphore:
+            resp = await client.get_backend(
+                f"/testcases/v1/getForProject",
+                params=params,
+            )
+
+        if resp['status_code'] != 200:
+            raise Exception(
+                f"Failed to retrieve test case for unique key '{unique_key}': {resp['data']}"
+            )
+
+        test_cases = resp['data'].get("content", [])
+        if len(test_cases) == 0:
+            raise Exception(
+                f"No test case found with unique key: {unique_key} in project with ID: {input.id}"
+            )
+
+        for test_case in test_cases:
+            if str(test_case.get("uniqueKey", "")).lower() == unique_key.lower():
+                test_case_id = test_case.get("id")
+                if not test_case_id:
+                    break
+                return uuid.UUID(str(test_case_id))
+
+        raise Exception(
+            f"No exact test case match found for unique key: {unique_key} in project with ID: {input.id}"
+        )
+
+    return await asyncio.gather(
+        *[_fetch_uuid_for_key(unique_key) for unique_key in unique_keys]
+    )
+
+
+@mcp.tool("run_test_case")
+async def run_test_case(input: RunTestCaseInput) -> str:
+    """
+    Run or execute a test case by its ID.
+
+    Args:
+        input (RunTestCaseInput): Input containing details for running a test case. The id field in the input is used to identify the test case to be run.
+
+    Returns:
+        str: A message indicating the successful execution of the test case.
+    """
+    payload = {
+        "testCaseId": str(input.testCaseId),
+        "browserType": input.browserType,
+        "envId": str(input.envId),
+        "platform": input.platform,
+        "userId": str(input.userId),
+    }
+    resp = await client.post_backend(
+        f"/testcases/v1/run-test-case",
+        json=payload,
+    )
+    if resp['status_code'] == 200:
+        return f"Test case with ID {input.testCaseId} executed successfully"
+    else:
+        raise Exception(f"Failed to execute test case: {resp['data']}")
+
+
+@mcp.tool("schedule_test_run")
+async def schedule_test_run(input: ScheduleTestRunInput) -> str:
+    """
+    Schedule a test run to be executed at a later time.
+
+    Args:
+        input (ScheduleTestRunInput): Input containing details for scheduling a test run. The id field in the input is used to identify the test run to be scheduled.
+
+    Returns:
+        str: A message indicating the successful scheduling of the test run.
+    """
+    # fetch existing run configuration to get details required for scheduling the run
+    resp = await client.get_backend(
+        f"/runconfig/v1/getrunconfig/{input.id}/{input.projectId}"
+    )
+    if resp['status_code'] != 200:
+        raise Exception(f"Failed to retrieve test run configuration: {resp['data']}")
+    run_config = resp['data']
+    # update the run configuration with scheduling details
+    # we will reuse existing run confiuration details and only update the fields required for scheduling the run
+    payload = {
+        "id": run_config.get("id"),
+        "userId": run_config.get("userId"),
+        "testRunId": run_config.get("testRunId"),
+        "userName": run_config.get("userName"),
+        "userTimezone": input.userTimezone,
+        "apkName": run_config.get("apkName"),
+        "envName": run_config.get("envName"),
+        "existingApkName": run_config.get("existingApkName"),
+        "existingEnvName": run_config.get("existingEnvName"),
+        "scheduleExecution": True,
+        "scheduledDate": input.scheduledDate,
+        "scheduledTime": input.scheduledTime,
+        "autoClone": run_config.get("autoClone"),
+        "cloneScheduleTime": run_config.get("cloneScheduleTime"),
+        "allowParallelExecution": run_config.get("allowParallelExecution"),
+    }
+    resp = await client.put_backend(
+        f"/runconfig/v1/update",
+        payload,
+    )
+    if resp['status_code'] == 200:
+        return f"Test run with ID {input.id} scheduled successfully for {input.scheduledDate} at {input.scheduledTime}"
+    else:
+        raise Exception(f"Failed to schedule test run: {resp['data']}")
+
+
+@mcp.tool("clone_test_run")
+async def clone_test_run(input: CloneTestRunInput) -> ClonedTestRunOutput:
+    """
+    Clone an existing test run.
+
+    Args:
+        input (CloneTestRunInput): Input containing details for cloning a test run. The id field in the input is used to identify the test run to be cloned.
+
+    Returns:
+        ClonedTestRunOutput: Output containing details of the newly cloned test run.
+    """
+    payload = input.model_dump(exclude={"token"}, mode="json", exclude_none=True)
+    resp = await client.post_backend(
+        f"/testrun/v1/cloneTestRun",
+        payload,
+    )
+    if resp['status_code'] == 200:
+        data = resp['data']
+        return ClonedTestRunOutput(
+            id=data.get("id"),
+            testRunName=data.get("testRunName"),
+            uniqueKey=data.get("uniqueKey"),
+        )
+    else:
+        raise Exception(f"Failed to clone test run: {resp['data']}")
+
+
+@mcp.tool("create_element")
+async def create_element(input: ElementCreationInput) -> ElementCreationOutput:
+    """
+    Create a new element.
+
+    Args:
+        input (ElementCreationInput): Input containing details for creating an element. The module in the input will be name of module and feature is UUID
+
+    Returns:
+        ElementCreationOutput: Output containing details of the created element.
+    """
+    payload = input.model_dump(exclude={"token"}, mode="json", exclude_none=True)
+    print(f"Payload for creating element: {payload}")
+    resp = await client.post_backend(
+        f"/elements/v1",
+        payload,
+    )
+    if resp['status_code'] == 200:
+        data = resp['data']
+        return ElementCreationOutput(
+            id=str(data.get("id", "")),
+            name=str(data.get("name", "")),
+            uniqueKey=str(data.get("uniqueKey", "")),
+            selector=str(data.get("selector", "")),
+            createdBy=str(data.get("createdBy", "")),
+        )
+    else:
+        raise Exception(f"Failed to create element: {resp['data']} with payload: {payload}")
+
+
+@mcp.tool("get_element_id_by_name_or_unique_key")
+async def get_element_id_by_name_or_unique_key(
+    input: ModuleIdByNameOrUniqueKeyInput,
+) -> ElementOutputResponse:
+    """
+    Get element ID by name or unique key.
+
+    Args:
+        input (ModuleIdByNameOrUniqueKeyInput): Input containing details for retrieving element ID. The identifier field in the input is used to search for the element by name or unique key.
+
+    Returns:
+        ElementOutputResponse: The element that matches the provided name or unique key.
+    """
+    resp = await client.get_backend(
+        f"/elements/v1?projectId={input.projectId}&query={input.identifier}&testMode=&createdBy=&moduleName=&featureName=&status=false&deleted=false&page=0&size=100",
+    )
+    if resp['status_code'] == 200:
+        mods = resp['data'].get("content", [])
+        if len(mods) == 0:
+            raise Exception(
+                f"No Element found with name or unique key: {input.identifier}"
+            )
+        elif len(mods) == 1:
+            return ElementOutputResponse(
+                id=uuid.UUID(mods[0].get("id")),
+                name=mods[0].get("name"),
+                uniqueKey=mods[0].get("uniqueKey"),
+                selector=mods[0].get("selector"),
+            )
+        else:
+            for mod in mods:
+                if (
+                    mod.get("name").lower() == input.identifier.lower()
+                    or mod.get("uniqueKey").lower() == input.identifier.lower()
+                ):
+                    return ElementOutputResponse(
+                        id=uuid.UUID(mod.get("id")),
+                        name=mod.get("name"),
+                        uniqueKey=mod.get("uniqueKey"),
+                        selector=mod.get("selector"),
+                    )
+    else:
+        raise Exception(f"Failed to retrieve Elements: {resp['data']}")
+
+
+@mcp.tool("update_element")
+async def update_element(input: ElementUpdateInput) -> str:
+    """
+    Update an existing element.
+
+    Args:
+        input (ElementUpdateInput): Input containing details for updating an element. The module in the input will be name of module and feature is UUID
+
+    Returns:
+        str: A message indicating the successful update of the element.
+    """
+    payload = input.model_dump(exclude={"token"}, mode="json", exclude_none=True)
+    resp = await client.patch_backend(
+        f"/elements/v1/{input.id}",
+        payload,
+    )
+    if resp['status_code'] == 200:
+        return f"Element with identifier '{input.id}' updated successfully"
+    else:
+        raise Exception(f"Failed to update element: {resp['data']}")
+
+
+@mcp.tool("wait_for_test_execution_completion")
+async def wait_for_test_execution_completion(
+    input: WaitForCaseExecutionInput,
+) -> TestCaseResultOutput:
+    """
+    Wait for the completion of a test execution by its ID.
+
+    Args:
+        input (WaitForCaseExecutionInput): Input containing details for waiting for execution of a test case.
+
+    Returns:
+        TestCaseResultOutput: The result of the test case execution.
+
+    """
+    while True:
+        resp = await client.get_backend(
+            f"/testcases/v1/get-testcase-result/{input.testCaseId}",
+        )
+        if resp['status_code'] == 200:
+            data = resp['data']
+            if data:
+                status = data[-1].get("status")
+                logs = data[-1].get("traceStack", "")
+                if status in ("Pass", "Fail", "Abort"):
+                    return TestCaseResultOutput(
+                        testCaseId=input.testCaseId,
+                        status=status,
+                        executeTime=data[-1].get("executeTime"),
+                        traceStack=logs,
+                    )
+            await asyncio.sleep(10)  # wait for 10 seconds before polling again
+        else:
+            raise Exception(f"Failed to retrieve test execution status: {resp['data']}")
+
+
