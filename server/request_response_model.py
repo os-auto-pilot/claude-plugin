@@ -1,8 +1,45 @@
 
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 import uuid
 
 from pydantic import BaseModel, Field, field_validator
+
+ALLOWED_DEFECT_STATES = {"Open", "Inprogress", "Reopened", "Closed", "Rejected"}
+ALLOWED_DEFECT_PRIORITIES = {"Minor", "Major", "Blocker", "Critical"}
+ALLOWED_DEFECT_STATUSES = {
+    "Assigned",
+    "Planned",
+    "Fix Inprogress",
+    "In Review",
+    "In Test",
+    "Bug Reproduced",
+    "Fix Failed",
+    "Fixed",
+    "Verified",
+    "Automated",
+    "Done",
+    "Duplicate",
+    "Not a Bug",
+    "Won't Fix",
+    "UnAssigned",
+}
+ALLOWED_TEST_MODES = {"Web", "API", "Mobile"}
+ALLOWED_TEST_TYPES = {"Automation", "Manual", "AI Automated", "AI Draft"}
+ALLOWED_SEVERITIES = {"Minor", "Major", "Blocker", "Critical"}
+ALLOWED_TEST_RUN_STATUSES = {
+    "New",
+    "Completed",
+    "Scheduled",
+    "Auto Scheduled",
+    "Auto Trigger",
+    "Skipped",
+    "Scheduled Computed",
+    "Auto Scheduled Completed",
+    "Auto Trigger Completed",
+    "In Progress",
+    "Aborted",
+}
+ALLOWED_TEST_TYPES_FOR_TEST_RUN_FILTERS = {"Automation", "Manual", "AI Automated"}
 
 
 def _normalize_csv_filter(value: Optional[str]) -> Optional[str]:
@@ -13,13 +50,12 @@ def _normalize_csv_filter(value: Optional[str]) -> Optional[str]:
         return None
     return ",".join(parts)
 
-class ModuleIdByNameOrUniqueKeyInput(BaseModel):
-    token: str = Field(..., description="Authentication token for retrieving module ID")
-    projectId: uuid.UUID = Field(
-        ..., description="ID of the project for which to retrieve module ID"
+class FeatureIdByNameOrUniqueKeyInput(BaseModel):
+    projectId: Optional[uuid.UUID] = Field(
+        None, description="ID of the project for which to retrieve feature ID"
     )
     identifier: str = Field(
-        ..., description="Name or unique key of the module to retrieve ID for"
+        ..., description="Name or unique key of the feature to retrieve ID for"
     )
 
 class FeatureCreationOutput(BaseModel):
@@ -39,8 +75,8 @@ class FeatureCreationInput(BaseModel):
     companyId: uuid.UUID = Field(
         ..., description="ID of the company for which the module is being created"
     )
-    projectId: uuid.UUID = Field(
-        ..., description="ID of the project for which the feature is being created"
+    projectId: Optional[uuid.UUID] = Field(
+        None, description="ID of the project for which the feature is being created"
     )
     moduleId: uuid.UUID = Field(
         ..., description="ID of the module for which the feature is being created"
@@ -48,9 +84,8 @@ class FeatureCreationInput(BaseModel):
 
 
 class ModuleIdByNameOrUniqueKeyInput(BaseModel):
-    token: str = Field(..., description="Authentication token for retrieving module ID")
-    projectId: uuid.UUID = Field(
-        ..., description="ID of the project for which to retrieve module ID"
+    projectId: Optional[uuid.UUID] = Field(
+        None, description="ID of the project for which to retrieve module ID"
     )
     identifier: str = Field(
         ..., description="Name or unique key of the module to retrieve ID for"
@@ -74,15 +109,12 @@ class ModuleCreationInput(BaseModel):
     companyId: uuid.UUID = Field(
         ..., description="ID of the company for which the module is being created"
     )
-    projectId: uuid.UUID = Field(
-        ..., description="ID of the project for which the module is being created"
+    projectId: Optional[uuid.UUID] = Field(
+        None, description="ID of the project for which the module is being created"
     )
 
 
 class ProjectIdByNameInput(BaseModel):
-    token: str = Field(
-        ..., description="Authentication token for retrieving admin projects"
-    )
     companyId: uuid.UUID = Field(
         ..., description="ID of the company for which to retrieve admin projects"
     )
@@ -104,8 +136,8 @@ class GetEnvironmentDetailsByNameOrUniqueKeyInput(BaseModel):
         ...,
         description="Name or unique key of the web environment to retrieve details for",
     )
-    projectId: uuid.UUID = Field(
-        ..., description="ID of the project for which to retrieve module ID"
+    projectId: Optional[uuid.UUID] = Field(
+        None, description="ID of the project for which to retrieve module ID"
     )
 
 class CreateWebEnvironmentOutput(BaseModel):
@@ -173,8 +205,8 @@ class TestRunCreationInput(BaseModel):
     """Model representing the input for creating a test run"""
 
     testRunName: str = Field(..., description="Name of the test run")
-    projectId: uuid.UUID = Field(
-        ..., description="ID of the project for which the test run is being created"
+    projectId: Optional[uuid.UUID] = Field(
+        None, description="ID of the project for which the test run is being created"
     )
     createdBy: Optional[str] = Field(
         None, description="Name (EmpName) of the user who created the test run"
@@ -197,8 +229,8 @@ class TestRunDetailsInput(BaseModel):
         None,
         description="Name or unique key of the test run to retrieve details for",
     )
-    projectId: uuid.UUID = Field(
-        ..., description="ID of the project for which to retrieve test run details"
+    projectId: Optional[uuid.UUID] = Field(
+        None, description="ID of the project for which to retrieve test run details"
     )
     status: Optional[str] = Field(
         None,
@@ -299,8 +331,8 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
         ...,
         description="ID of the test run to which test cases will be added or removed",
     )
-    projectId: uuid.UUID = Field(
-        ...,
+    projectId: Optional[uuid.UUID] = Field(
+        None,
         description="ID of the project for which to add or remove test cases from the test run",
     )
     status: Optional[str] = Field(
@@ -508,8 +540,8 @@ class GetEnvironmentsAssignedToUserInput(BaseModel):
         ...,
         description="ID or userId of the user to retrieve assigned environments for",
     )
-    projectId: uuid.UUID = Field(
-        ...,
+    projectId: Optional[uuid.UUID] = Field(
+        None,
         description="ID of the project for which to retrieve assigned environments for the user",
     )
 
@@ -750,8 +782,8 @@ class ScheduleTestRunInput(BaseModel):
         ...,
         description="ID of the test run to be scheduled",
     )
-    projectId: uuid.UUID = Field(
-        ...,
+    projectId: Optional[uuid.UUID] = Field(
+        None,
         description="ID of the project for which to schedule the test run",
     )
     scheduledDate: str = Field(
@@ -774,8 +806,8 @@ class CloneTestRunInput(BaseModel):
         ...,
         description="ID of the test run to be cloned",
     )
-    projectId: uuid.UUID = Field(
-        ...,
+    projectId: Optional[uuid.UUID] = Field(
+        None,
         description="ID of the project for which to clone the test run",
     )
     testRunName: str = Field(
@@ -839,8 +871,8 @@ class ElementUpdateInput(BaseModel):
         default=None,
         description="Name of the element to be updated",
     )
-    projectId: uuid.UUID = Field(
-        ...,
+    projectId: Optional[uuid.UUID] = Field(
+        None,
         description="ID of the project to which the element belongs",
     )
 
@@ -888,8 +920,8 @@ class ElementCreationInput(BaseModel):
         ...,
         description="Module name to which the element belongs",
     )
-    projectId: uuid.UUID = Field(
-        ...,
+    projectId: Optional[uuid.UUID] = Field(
+        None,
         description="ID of the project to which the element belongs",
     )
     createdBy: str = Field(
@@ -946,4 +978,181 @@ class TestCaseResultOutput(BaseModel):
         description="Complete log of test case with each test step and its execution status",
     )
 
+class TestDataEntry(BaseModel):
+    field: str = Field(..., description="Name or placeholder name of the test data field")
+    value: str = Field(..., description="Value of the test data field")
+    type: str = Field(default="text", description="Type of the test data field. For every thing it is 'text' when upload file then it is 'file'")
 
+class ClaudeElement(BaseModel):
+    """An element provided by Claude with real locators (Phase 2 output)."""
+    name: str = Field(..., description="Name of the element, e.g., 'email_textbox' — no el: prefix")
+    css_selector: Optional[str] = Field(default=None, description="Primary CSS selector saved to DB")
+    xpath: Optional[str] = Field(default=None, description="Fallback XPath selector, stored for reference")
+
+
+class ClaudeTestCaseInput(BaseModel):
+    """A single test case authored by Claude in Phase 1/2."""
+    name: str = Field(..., description="Name of the test case, e.g., 'Login with valid credentials'")
+    description: str = Field(..., description="Description of the test case")
+    type: Literal["Functional +Ve", "Functional -Ve", "Other"] = Field(default="Functional +Ve", description="Type of the test case, e.g., 'Functional +Ve' or 'Functional -Ve'")
+    priority: Literal["Minor", "Major", "Blocker", "Critical"] = Field(default="Major", description="Priority of the test case, e.g., 'Minor', 'Major', 'Blocker', 'Critical'")
+    test_phase: str = Field(default="QA", description="Test phase of the test case, e.g., 'QA'")
+    steps: List[str] = Field(..., description="Steps of the test case, already in autopilot format")
+    elements: List[ClaudeElement] = Field(default_factory=list, description="List of elements involved in the test case")
+    test_data: List[TestDataEntry] = Field(default_factory=list, description="List of test data entries for the test case")
+
+
+class CreateTestCaseFromClaudeRequest(BaseModel):
+    """Batch request from the Claude plugin — no LLM re-analysis needed."""
+    test_cases: List[ClaudeTestCaseInput]
+    module: str = Field(..., description="Module name for the test cases")
+    feature: uuid.UUID = Field(..., description="Feature ID for the test cases")
+    test_mode: Literal["Web", "API", "Mobile"] = Field(..., description="Test mode, e.g., 'Web', 'API', 'Mobile'")
+    project_id: Optional[uuid.UUID] = Field(None, description="Project ID for the test cases")
+    user_id: Optional[uuid.UUID] = Field(None, description="User ID for the test cases")
+    created_by: str = Field(..., description="Name of the user creating the test cases")
+    browser_type: Literal["Chrome", "Firefox", "Safari", "Edge"] = Field(default="Chrome", description="Browser type for the test cases, e.g., 'Chrome'")
+    platform: str = Field(default="", description="Platform for the test cases, e.g., 'web', 'mobile', 'api'")
+    env_id: str = Field(default="", description="Environment ID for the test cases")
+    apk_id: str = Field(default="", description="APK ID for the test cases")
+
+class GetDefectOrTaskDetailsByNameOrUniqueKeyInput(BaseModel):
+    """Model representing the input for retrieving defect or task details by name or unique key"""
+
+    identifier: Optional[str] = Field(
+        None,
+        description="Name or unique key of the defect or task to retrieve details for",
+    )
+    projectId: Optional[uuid.UUID] = Field(
+        default=None,
+        description="ID of the project for which to retrieve defect or task details",
+    )
+    priority: Optional[str] = Field(
+        None,
+        description="Priority filter. Supports single or comma-separated values from Minor, Major, Blocker, Critical",
+    )
+    state: Optional[str] = Field(
+        None,
+        description="State filter. Supports single or comma-separated values from Open, Inprogress, Reopened, Closed, Rejected",
+    )
+    status: Optional[str] = Field(
+        None,
+        description="Status filter. Supports single or comma-separated status values",
+    )
+    createdBy: Optional[str] = Field(
+        None, description="Name of the user who created the defect or task"
+    )
+    assignedTo: Optional[str] = Field(
+        None, description="Name of the user to whom the defect or task is assigned"
+    )
+    assignedBy: Optional[str] = Field(
+        None, description="Name of the user who assigned the defect or task"
+    )
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def validate_state_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+        invalid = [
+            item for item in normalized.split(",") if item not in ALLOWED_DEFECT_STATES
+        ]
+        if invalid:
+            raise ValueError(
+                f"Invalid state value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_DEFECT_STATES))}"
+            )
+        return normalized
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def validate_priority_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+        invalid = [
+            item
+            for item in normalized.split(",")
+            if item not in ALLOWED_DEFECT_PRIORITIES
+        ]
+        if invalid:
+            raise ValueError(
+                f"Invalid priority value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_DEFECT_PRIORITIES))}"
+            )
+        return normalized
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+        invalid = [
+            item
+            for item in normalized.split(",")
+            if item not in ALLOWED_DEFECT_STATUSES
+        ]
+        if invalid:
+            raise ValueError(
+                f"Invalid status value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_DEFECT_STATUSES))}"
+            )
+        return normalized
+
+    @field_validator("createdBy", "assignedTo", "assignedBy", mode="before")
+    @classmethod
+    def normalize_name_filters_csv(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_csv_filter(value)
+
+
+class GetDefectOrTaskDetailsOutput(BaseModel):
+    """Model representing the output for retrieving defect or task details by name or unique key"""
+
+    id: uuid.UUID = Field(..., description="ID of the defect or task")
+    title: str = Field(..., description="Title of the defect or task")
+    description: str = Field(..., description="Description of the defect or task")
+    priority: Optional[Literal["Minor", "Major", "Blocker", "Critical"]] = Field(
+        None, description="Priority of the defect or task"
+    )
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key of the defect or task"
+    )
+    state: Optional[Literal["Open", "Inprogress", "Reopened", "Closed", "Rejected"]] = (
+        Field(None, description="State of the defect or task")
+    )
+    status: Optional[
+        Literal[
+            "Assigned",
+            "Planned",
+            "Fix Inprogress",
+            "In Review",
+            "In Test",
+            "Bug Reproduced",
+            "Fix Failed",
+            "Fixed",
+            "Verified",
+            "Automated",
+            "Done",
+            "Duplicate",
+            "Not a Bug",
+            "Won't Fix",
+            "UnAssigned",
+        ]
+    ] = Field(
+        None,
+        description="Status of the defect or task to filter by when retrieving defect or task details",
+    )
+    assignedTo: Optional[str] = Field(
+        None, description="Name of the user to whom the defect or task is assigned"
+    )
+    createdBy: Optional[str] = Field(
+        None, description="Name of the user who created the defect or task"
+    )
+    createdAt: Optional[str] = Field(
+        None, description="Creation date of the defect or task"
+    )
+    assignedBy: Optional[str] = Field(
+        None, description="Name of the user who assigned the defect or task"
+    )
+    targetDate: Optional[str] = Field(
+        None, description="Target date of the defect or task"
+    )

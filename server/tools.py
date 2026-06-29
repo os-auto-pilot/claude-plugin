@@ -20,8 +20,8 @@ from . import client
 mcp = FastMCP("oniesoft-test-platform")
 
 
-def _project(project_id: str | None) -> str:
-    pid = project_id or client.DEFAULT_PROJECT_ID
+def _project(project_id: uuid.UUID | None) -> uuid.UUID:
+    pid = project_id or uuid.UUID(client.DEFAULT_PROJECT_ID)
     if not pid:
         raise ValueError(
             "No project_id given and no default configured. Pass project_id or set "
@@ -30,123 +30,76 @@ def _project(project_id: str | None) -> str:
     return pid
 
 
-def _user(user_id: str | None) -> str | None:
-    return user_id or client.DEFAULT_USER_ID
+def _user(user_id: uuid.UUID | None) -> uuid.UUID | None:
+    return user_id or uuid.UUID(client.DEFAULT_USER_ID)
 
 
 # --------------------------------------------------------------- generation ----
-@mcp.tool()
-async def create_test_cases(
-    user_input: str,
-    module: str,
-    feature: str,
-    test_mode: str = "web",
-    project_id: str | None = None,
-    user_prompt: str = "",
-    browser_type: str = "Chrome",
-    platform: str = "",
-    env_id: str = "",
-    apk_id: str = "",
-    severity: str = "Minor",
-) -> dict[str, Any]:
-    """Generate and persist test cases from a natural-language description.
+# @mcp.tool()
+# async def create_test_cases(
+#     user_input: str,
+#     module: str,
+#     feature: str,
+#     test_mode: str = "web",
+#     project_id: str | None = None,
+#     user_prompt: str = "",
+#     browser_type: str = "Chrome",
+#     platform: str = "",
+#     env_id: str = "",
+#     apk_id: str = "",
+#     severity: str = "Minor",
+# ) -> dict[str, Any]:
+#     """Generate and persist test cases from a natural-language description.
 
-    test_mode is one of: "web" (UI), "api" (HTTP/REST), or "mobile" (native
-    Android/iOS). The backend routes web/mobile through the UI pipeline and api
-    through the API pipeline, then stores the resulting test cases in the project.
+#     test_mode is one of: "web" (UI), "api" (HTTP/REST), or "mobile" (native
+#     Android/iOS). The backend routes web/mobile through the UI pipeline and api
+#     through the API pipeline, then stores the resulting test cases in the project.
 
-    Returns the created test case ids and counts.
-    """
-    payload = {
-        "user_input": user_input,
-        "module": module,
-        "feature": feature,
-        "testMode": test_mode,
-        "projectId": _project(project_id),
-        "createdBy": _user(None) or "claude-code",
-        "userId": _user(None) or "",
-        "user_prompt": user_prompt,
-        "browserType": browser_type,
-        "platform": platform,
-        "envId": env_id,
-        "apkId": apk_id,
-        "severity": severity,
-    }
-    return await client.post_platform("/api/test-cases/create", payload)
-
-
-@mcp.tool()
-async def analyze_test_steps(
-    user_input: str,
-    module: str,
-    feature: str,
-    test_mode: str = "web",
-    project_id: str | None = None,
-) -> dict[str, Any]:
-    """Analyze a description and return the selected test steps + elements + test
-    data WITHOUT persisting a full test case. Useful to preview what would be
-    generated before committing.
-    """
-    payload = {
-        "user_input": user_input,
-        "module": module,
-        "feature": feature,
-        "testMode": test_mode,
-        "projectId": _project(project_id),
-        "createdBy": _user(None) or "claude-code",
-    }
-    return await client.post_platform("/api/analyze", payload)
+#     Returns the created test case ids and counts.
+#     """
+#     payload = {
+#         "user_input": user_input,
+#         "module": module,
+#         "feature": feature,
+#         "testMode": test_mode,
+#         "projectId": _project(project_id),
+#         "createdBy": _user(None) or "claude-code",
+#         "userId": _user(None) or "",
+#         "user_prompt": user_prompt,
+#         "browserType": browser_type,
+#         "platform": platform,
+#         "envId": env_id,
+#         "apkId": apk_id,
+#         "severity": severity,
+#     }
+#     return await client.post_platform("/api/test-cases/create", payload)
 
 
 @mcp.tool()
-async def save_claude_test_cases(
-    test_cases: list[dict],
-    module: str,
-    feature: str,
-    feature_id: str,
-    test_mode: str = "web",
-    project_id: str | None = None,
-    user_id: str | None = None,
-    browser_type: str = "Chrome",
-    platform: str = "",
-    env_id: str = "",
-    apk_id: str = "",
-) -> dict[str, Any]:
+async def save_claude_test_cases(request: CreateTestCaseFromClaudeRequest) -> dict[str, Any]:
     """Persist test cases that Claude authored in Phase 1/2 — NO LLM re-analysis.
 
     Use this (not create_test_cases) after /analyze-requirements + element-discoverer
     have produced fully structured test cases. The backend only creates elements with
     real selectors and validates step syntax; it does NOT re-interpret the content.
 
-    Each item in test_cases must have:
-      name        (str)  — test case name, e.g. "TC-001: Login with valid creds"
-      description (str)  — short description (max 600 chars)
-      type        (str)  — "Functional +Ve" | "Functional -Ve"
-      priority    (str)  — "Minor" | "Major" | "Blocker" | "Critical"
-      test_phase  (str)  — default "QA"
-      steps       (list) — autopilot-format step strings (see SKILL.md format guide)
-      elements    (list) — [{name, css_selector, xpath}]  (css_selector preferred)
-      test_data   (list) — [{field, value, type}]  (type is usually "text")
-
-    feature_id is the UUID of the feature in the autopilot backend (needed to
-    create/look up elements). Get it from the project config or the UI.
-
+    input: CreateTestCaseFromClaudeRequest with test_cases, module, feature, test_mode, project_id, user_id, browser_type, platform, env_id, apk_id
+    
     Returns the created test case ids and counts.
     """
-    uid = _user(user_id) or ""
+    uid = _user(request.user_id) or ""
     payload = {
-        "test_cases": test_cases,
-        "module": module,
-        "feature": feature,
-        "feature_id": feature_id,
-        "test_mode": test_mode,
-        "project_id": _project(project_id),
+        "test_cases": request.test_cases,
+        "module": request.module,
+        "feature": request.feature,
+        "test_mode": request.test_mode,
+        "project_id": _project(request.project_id),
         "user_id": uid,
         "created_by": uid or "claude-code",
-        "browser_type": browser_type,
-        "platform": platform,
-        "env_id": env_id,
-        "apk_id": apk_id,
+        "browser_type": request.browser_type,
+        "platform": request.platform,
+        "env_id": request.env_id,
+        "apk_id": request.apk_id,
     }
     return await client.post_platform("/api/test-cases/create-from-claude", payload)
 
@@ -154,8 +107,8 @@ async def save_claude_test_cases(
 @mcp.tool()
 async def create_test_case_from_defect(
     defect_id: str,
-    project_id: str | None = None,
-    user_id: str | None = None,
+    project_id: Optional[uuid.UUID] = None,
+    user_id: Optional[uuid.UUID] = None,
 ) -> dict[str, Any]:
     """Generate a test case from an existing defect/bug id by pulling its details
     and reproducing it as a test.
@@ -174,8 +127,8 @@ async def create_test_case_from_defect(
 async def run_tests(
     test_case_id: str | None = None,
     test_run_id: str | None = None,
-    project_id: str | None = None,
-    user_id: str | None = None,
+    project_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     browser_type: str = "chrome",
     platform: str = "",
     env_id: str = "-",
@@ -319,17 +272,19 @@ async def fetch_test_run_failure_details(failed_case_ids: list[str]) -> list[dic
 
     Returns a list of dicts: case_id, trace_stack (last 500 chars), test_data, test_steps.
     """
-    results: list[dict] = []
-    for case_id in failed_case_ids:
-        resp = await client.get_backend(
-            f"/testrun/v1/get-test-data-result/{case_id}"
-        )
+    semaphore = asyncio.Semaphore(10)
+
+    async def _fetch_one(case_id: str) -> list[dict]:
+        async with semaphore:
+            resp = await client.get_backend(
+                f"/testrun/v1/get-test-data-result/{case_id}"
+            )
         if resp["status_code"] != 200:
-            results.append({"case_id": case_id, "error": str(resp["data"])})
-            continue
+            return [{"case_id": case_id, "error": str(resp["data"])}]
         raw = resp["data"]
         if not isinstance(raw, list):
             raw = [raw] if raw else []
+        items = []
         for item in raw:
             if str(item.get("status", "")).lower() != "fail":
                 continue
@@ -338,14 +293,17 @@ async def fetch_test_run_failure_details(failed_case_ids: list[str]) -> list[dic
             trac = item.get("testRunAndCase")
             if isinstance(trac, dict):
                 test_steps = str(trac.get("testSteps") or "")
-            results.append({
+            items.append({
                 "case_id": case_id,
                 "data_id": item.get("id", ""),
                 "trace_stack": trace[-500:] if len(trace) > 500 else trace,
                 "test_data": str(item.get("testData") or ""),
                 "test_steps": test_steps,
             })
-    return results
+        return items
+
+    nested = await asyncio.gather(*[_fetch_one(cid) for cid in failed_case_ids])
+    return [item for sublist in nested for item in sublist]
 
 
 @mcp.tool()
@@ -396,19 +354,19 @@ async def fetch_util_details(util_id: str) -> dict[str, Any]:
 # from super agent
 @mcp.tool("get_feature_id_by_name_or_unique_key")
 async def get_feature_id_by_name_or_unique_key(
-    input: ModuleIdByNameOrUniqueKeyInput,
-) -> FeatureCreationOutput:
+    input: FeatureIdByNameOrUniqueKeyInput,
+) -> FeatureCreationOutput|None:
     """
     Get feature ID by name or unique key.
 
     Args:
-        input (ModuleIdByNameOrUniqueKeyInput): Input containing details for retrieving feature ID. The identifier field in the input is used to filter features by name or unique key.
+        input (FeatureIdByNameOrUniqueKeyInput): Input containing details for retrieving feature ID. The identifier field in the input is used to filter features by name or unique key.
 
     Returns:
         FeatureCreationOutput: Output containing the details of the feature that matches the provided name or unique key.
     """
     resp = await client.get_backend(
-        f"/feature/v1/get-features-by-projectId/{input.projectId}?query={input.identifier}&deleted=false&page=0&size=25&moduleName=",
+        f"/feature/v1/get-features-by-projectId/{_project(input.projectId)}?query={input.identifier}&deleted=false&page=0&size=25&moduleName=",
     )
 
     if resp['status_code'] == 200:
@@ -453,7 +411,7 @@ async def create_feature(input: FeatureCreationInput) -> FeatureCreationOutput:
         "featureName": input.name,
         "description": input.description,
         "companyId": str(input.companyId),
-        "projectId": str(input.projectId),
+        "projectId": str(_project(input.projectId)),
     }
     resp = await client.post_platform(
         f"/feature/v1/save/{input.moduleId}",
@@ -485,7 +443,7 @@ async def create_module(input: ModuleCreationInput) -> ModuleOutputResponse:
         "moduleName": input.moduleName,
         "description": input.description,
         "companyId": str(input.companyId),
-        "projectId": str(input.projectId),
+        "projectId": str(_project(input.projectId)),
     }
     resp = await client.post_backend(
         f"/module/v1/save",
@@ -505,7 +463,7 @@ async def create_module(input: ModuleCreationInput) -> ModuleOutputResponse:
 @mcp.tool("get_module_id_by_name_or_unique_key")
 async def get_module_id_by_name_or_unique_key(
     input: ModuleIdByNameOrUniqueKeyInput,
-) -> ModuleOutputResponse:
+) -> ModuleOutputResponse | None:
     """
     Get module ID by name or unique key.
 
@@ -516,7 +474,7 @@ async def get_module_id_by_name_or_unique_key(
         ModuleOutputResponse: Output containing the details of the module that matches the provided name or unique key.
     """
     resp = await client.get_backend(
-        f"/module/v1/get-page-modules/{input.projectId}?query={input.identifier.lower()}&deleted=false&page=0&size=25",
+        f"/module/v1/get-page-modules/{_project(input.projectId)}?query={input.identifier.lower()}&deleted=false&page=0&size=25",
     )
     if resp['status_code'] == 200:
         mods = resp['data'].get("content", [])
@@ -581,7 +539,7 @@ async def get_project_id_by_name(
 
         return matching_projects
     else:
-        raise Exception(f"Failed to retrieve admin projects: {resp.text}")
+        raise Exception(f"Failed to retrieve admin projects: {resp['data']}")
 
 
 @mcp.tool("get_web_environment_details_by_name_or_unique_key")
@@ -599,7 +557,7 @@ async def get_web_environment_details_by_name_or_unique_key(
         List[str]: List of all environment names in the project when no match is found for the given identifier.
     """   
     resp = await client.get_backend(
-        f"/servers/v1/list-servers?projectId={input.projectId}&deleted=false",
+        f"/servers/v1/list-servers?projectId={_project(input.projectId)}&deleted=false",
     )
     if resp['status_code'] == 200:
         envs = resp['data']
@@ -688,7 +646,7 @@ async def create_test_run(input: TestRunCreationInput) -> TestRunCreationOutput:
     payload = input.model_dump(exclude={"token"}, mode="json", exclude_none=True)
     resp = await client.post_backend(
         f"/testrun/v1/createtestrun",
-        json=payload,
+        payload,
     )
     if resp['status_code'] == 200:
         data = resp['data']
@@ -712,7 +670,7 @@ async def get_test_runs_with_filters(
     """
 
     base_params = {
-        "projectId": str(input.projectId),
+        "projectId": str(_project(input.projectId)),
         "query": input.nameOrUniqueKey,
         "status": input.status,
         "createdBy": input.createdBy,
@@ -807,11 +765,10 @@ async def add_or_remove_test_cases_from_test_run(
         print(f"Resolving unique keys to IDs for: {unique_key_terms}")
         resolved_unique_key_ids = await get_test_cases_uuid_by_unique_keys(
             GetTestCasesUUIDByUniqueKeyInput(
-                id=input.projectId,
+                id=_project(input.projectId),
                 uniqueKeys=unique_key_terms,
                 active=False,
                 deleted=False,
-                token=input.token,
             )
         )
         resolved_unique_key_ids_as_str = [
@@ -852,7 +809,7 @@ async def add_or_remove_test_cases_from_test_run(
             print(f"Fetching test cases for filtering with params: {filter_params}")
 
             filter_resp = await client.get_backend(
-                f"/testrun/v1/edittestrun/{input.id}/{input.projectId}",
+                f"/testrun/v1/edittestrun/{input.id}/{_project(input.projectId)}",
                 params=filter_params,
             )
             if filter_resp['status_code'] != 200:
@@ -915,7 +872,7 @@ async def add_or_remove_test_cases_from_test_run(
     }
     resp = await client.post_backend(
         f"/testrun/v1/addtestrun",
-        json=payload,
+        payload,
     )
     if resp['status_code'] == 200:
         return f"Test cases successfully {action}ed the test run with ID: {input.id}"
@@ -936,13 +893,8 @@ async def get_environments_assigned_to_user(
     Returns:
         List[GetEnvironmentsAssignedToUserOutput]: Output containing the list of environments assigned to the specified user.
     """
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {input.token}",
-    }
     resp = await client.get_backend(
-        f"/servers/v1/servers-by-user/{input.registerId}/{input.projectId}/true",
-        headers=headers,
+        f"/servers/v1/servers-by-user/{input.registerId}/{_project(input.projectId)}/true",
     )
     if resp['status_code'] == 200:
         environments = resp['data']
@@ -968,13 +920,8 @@ async def get_projects_assigned_to_user(
     Returns:
         List[GetProjectsAssignedToUserOutput]: Output containing the list of projects assigned to the specified user.
     """
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {input.token}",
-    }
     resp = await client.get_backend(
         f"/projectusers/v1/getassignregisters/{input.registerId}",
-        headers=headers,
     )
     print(
         f"Response from get projects assigned to user API: {resp['status_code']} - {resp['data']}"
@@ -1159,7 +1106,7 @@ async def run_test_case(input: RunTestCaseInput) -> str:
     }
     resp = await client.post_backend(
         f"/testcases/v1/run-test-case",
-        json=payload,
+        payload,
     )
     if resp['status_code'] == 200:
         return f"Test case with ID {input.testCaseId} executed successfully"
@@ -1180,7 +1127,7 @@ async def schedule_test_run(input: ScheduleTestRunInput) -> str:
     """
     # fetch existing run configuration to get details required for scheduling the run
     resp = await client.get_backend(
-        f"/runconfig/v1/getrunconfig/{input.id}/{input.projectId}"
+        f"/runconfig/v1/getrunconfig/{input.id}/{_project(input.projectId)}"
     )
     if resp['status_code'] != 200:
         raise Exception(f"Failed to retrieve test run configuration: {resp['data']}")
@@ -1261,7 +1208,7 @@ async def create_element(input: ElementCreationInput) -> ElementCreationOutput:
     if resp['status_code'] == 200:
         data = resp['data']
         return ElementCreationOutput(
-            id=str(data.get("id", "")),
+            id=uuid.UUID(data.get("id", "")),
             name=str(data.get("name", "")),
             uniqueKey=str(data.get("uniqueKey", "")),
             selector=str(data.get("selector", "")),
@@ -1274,7 +1221,7 @@ async def create_element(input: ElementCreationInput) -> ElementCreationOutput:
 @mcp.tool("get_element_id_by_name_or_unique_key")
 async def get_element_id_by_name_or_unique_key(
     input: ModuleIdByNameOrUniqueKeyInput,
-) -> ElementOutputResponse:
+) -> ElementOutputResponse | None:
     """
     Get element ID by name or unique key.
 
@@ -1284,8 +1231,9 @@ async def get_element_id_by_name_or_unique_key(
     Returns:
         ElementOutputResponse: The element that matches the provided name or unique key.
     """
+    project_id = _project(input.projectId)
     resp = await client.get_backend(
-        f"/elements/v1?projectId={input.projectId}&query={input.identifier}&testMode=&createdBy=&moduleName=&featureName=&status=false&deleted=false&page=0&size=100",
+        f"/elements/v1?projectId={project_id}&query={input.identifier}&testMode=&createdBy=&moduleName=&featureName=&status=false&deleted=false&page=0&size=100",
     )
     if resp['status_code'] == 200:
         mods = resp['data'].get("content", [])
@@ -1372,4 +1320,40 @@ async def wait_for_test_execution_completion(
         else:
             raise Exception(f"Failed to retrieve test execution status: {resp['data']}")
 
+@mcp.tool("get_defects_with_filters")
+async def get_defects_with_filters(
+    input: GetDefectOrTaskDetailsByNameOrUniqueKeyInput,
+) -> List[GetDefectOrTaskDetailsOutput]:
+    """
+    Retrieves defects using filters like name, unique key, priority, status, state, assignedTo, assignedBy, and createdBy.
+    """
+    params = {
+        "searchTerm": input.identifier,
+        "priority": input.priority,
+        "status": input.status,
+        "state": input.state,
+        "assignedTo": input.assignedTo,
+        "assignedBy": input.assignedBy,
+        "createdBy": input.createdBy,
+        "deleted": "false",
+    }
+    # Do not send optional filters that are not provided.
+    params = {k: v for k, v in params.items() if v not in (None, "")}
 
+    resp = await client.get_backend(
+        f"/api/issues/allWithPagination/{_project(input.projectId)}/0/100",
+        params=params
+    )
+    if resp['status_code'] == 200:
+        defects = resp['data'].get("content", [])
+        if len(defects) == 0:
+            if input.identifier:
+                raise Exception(
+                    f"No defect found with name or unique key: {input.identifier}"
+                )
+            raise Exception("No defect found for the provided filters")
+        else:
+            return [GetDefectOrTaskDetailsOutput(**defect) for defect in defects]
+
+    else:
+        raise Exception(f"Failed to retrieve defects: {resp['data']}")
