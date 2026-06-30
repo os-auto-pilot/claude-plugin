@@ -8,6 +8,7 @@ the model can call them with minimal arguments.
 from __future__ import annotations
 
 import asyncio
+from enum import unique
 from typing import Any, List, Optional, Union
 import uuid
 
@@ -330,25 +331,90 @@ async def fetch_element_details(element_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def fetch_util_details(util_id: str) -> dict[str, Any]:
-    """Fetch shared utility/step details by ID (name, steps, test data, testMode).
+async def fetch_util_details(input: GetUtilsWithFiltersInput) -> GetUtilsWithFiltersOutput:
+    """Search and filter shared utilities (utils) in a project.
 
-    Call this when a failure trace references a utility ID to understand which
-    shared step sequence was involved in the failure.
+    Returns a paginated list of utils matching the provided filters. Useful for
+    discovering which utilities are available in a module/feature, or for looking
+    up a util by name before referencing it in test steps.
     """
-    resp = await client.get_backend(f"/utils/v1/get-util/{util_id}")
-    if resp["status_code"] != 200:
-        if resp["status_code"] == 500 or "JWT" in str(resp["data"]):
-            return {"error": f"Cannot fetch util {util_id}: invalid token or server error"}
-        raise ValueError(f"Failed to fetch util details: {resp['data']}")
-    u = resp["data"]
-    return {
-        "id": u.get("id"),
-        "utilName": u.get("utilName"),
-        "utilTestCaseSteps": u.get("utilTestCaseSteps"),
-        "data": u.get("data"),
-        "testMode": u.get("testMode"),
+    project_id = input.projectId or client.DEFAULT_PROJECT_ID
+    if not project_id:
+        raise ValueError(
+            "No projectId given and no default configured. Pass projectId or set "
+            "default_project_id in the plugin config."
+        )
+    params: dict[str, Any] = {
+        "query": input.query or "",
+        "testMode": input.testMode or "",
+        "feature": input.feature or "",
+        "module": input.module or "",
+        "page": input.page,
+        "size": input.size,
+        "status": str(input.status).lower() if input.status is not None else "false",
+        "deleted": str(input.deleted).lower() if input.deleted is not None else "false",
     }
+    resp = await client.get_backend(
+        f"/utils/v1/get-all-utils/{project_id}", params=params
+    )
+    if resp["status_code"] != 200:
+        raise ValueError(f"Failed to fetch utils: {resp['data']}")
+    data = resp["data"]
+    return GetUtilsWithFiltersOutput(
+        content=[UtilOutput(**item) for item in data.get("content", [])],
+        totalElements=data.get("totalElements", 0),
+        totalPages=data.get("totalPages", 0),
+        page=data.get("number", input.page),
+        size=data.get("size", input.size),
+        last=data.get("last", True),
+    )
+
+
+@mcp.tool()
+async def create_util(input: ClaudeUtilInput, project_id: Optional[uuid.UUID] = None) -> UtilOutput:
+    """Create a single utility in the project via the backend API.
+
+    For bulk util creation from Phase 1 analysis, prefer save_claude_utils instead.
+    """
+    pid = project_id or client.DEFAULT_PROJECT_ID
+    if not pid:
+        raise ValueError(
+            "No project_id given and no default configured. Pass project_id or set "
+            "default_project_id in the plugin config."
+        )
+    resp = await client.post_backend(
+        f"/utils/v1/create-util/{pid}",
+        payload=input.model_dump(),
+    )
+    if resp["status_code"] != 200:
+        raise ValueError(f"Failed to create util: {resp['data']}")
+    return UtilOutput(**resp["data"])
+
+
+@mcp.tool()
+async def save_claude_utils(request: CreateUtilFromClaudeRequest) -> dict[str, Any]:
+    """Persist utils that Claude identified in Phase 1 — NO LLM re-analysis.
+
+    Call this BEFORE save_claude_test_cases when reusable utils were identified
+    during requirement analysis. The returned UUIDs must be used in test case steps
+    as: execute util "<uuid>"
+
+    Test data in a util can be overridden by a calling test case using the naming
+    convention: <field>_i<N>_<util-uuid> where N is the invocation number (1, 2, ...).
+    Override is optional — omitting it uses the util's default test data.
+
+    input: CreateUtilFromClaudeRequest with utils, module, project_id, user_id, created_by
+    Returns the created util UUIDs and count.
+    """
+    uid = _user(request.user_id) or ""
+    payload = {
+        "utils": [u.model_dump() for u in request.utils],
+        "module": request.module,
+        "project_id": str(_project(request.projectId)),
+        "user_id": str(uid),
+        "created_by": uid or "claude-code",
+    }
+    return await client.post_platform("/api/utils/create-from-claude", payload)
 
 
 # from super agent
@@ -565,9 +631,10 @@ async def get_web_environment_details_by_name_or_unique_key(
             raise Exception("No environments in the project")
         else:
             for env in envs:
+                unique_key = env.get("uniqueKey") if env.get("uniqueKey") else ""
                 if (
                     env.get("serverName", "").lower() == input.identifier.lower()
-                    or env.get("uniqueKey", "").lower() == input.identifier.lower()
+                    or unique_key.lower() == input.identifier.lower()
                 ):
                     return CreateWebEnvironmentOutput(
                         id=uuid.UUID(env.get("id")),

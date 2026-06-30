@@ -6,17 +6,40 @@ description: Analyze a requirement document, codebase, or Swagger/OpenAPI spec a
 # Analyze Requirements → Generate Manual Test Cases
 
 You are the test case author. Analyze the provided input and produce structured
-manual test cases in the standard Oniesoft template. Claude is the brain here —
-do NOT call any backend tools in this phase.
+manual test cases in the standard Oniesoft template.
 
-## Step 1 — Understand the input type
+## Step 1 — Comprehensive Intake
 
-Ask the user what they are providing if not clear:
-- **Requirement / Feature doc** → analyze directly
-- **Codebase** → read the relevant source files to understand controllers,
-  routes, business logic, and UI components
-- **Swagger / OpenAPI doc** → ask: *"Which controller or endpoint do you want
-  test cases for?"* before proceeding. Do not generate for the entire spec at once.
+Ask the user for all inputs in a **single message**. Do not ask piecemeal.
+
+> **To generate accurate test cases, please share what you have (provide at least one):**
+>
+> - Requirements / feature document
+> - Codebase (path or relevant files)
+> - Swagger / OpenAPI spec
+> - Playwright recording files (`.spec.ts` / `.spec.js`) — **only needed if no codebase is available**
+> - HAR file — optional, adds backend error message accuracy
+
+Do **not** ask for Playwright recordings if:
+- A frontend or full-stack codebase is provided (codebase already has element identifiers and validation schemas)
+- A Swagger/OpenAPI spec is the primary source (spec already has field constraints and error schemas)
+
+After the user responds, proceed to **Step 1b** before doing anything else.
+
+## Step 1b — Detect Codebase Type (if codebase provided)
+
+If a codebase was provided, classify it by inspecting file extensions, directory names, and key imports:
+
+| Signals | Classification | Test type to generate |
+|---|---|---|
+| `.tsx`, `.jsx`, `.vue`, `.svelte`, `components/`, `pages/`, HTML templates | **Frontend** | Web test cases |
+| `controllers/`, `routes/`, `views.py`, `serializers.py`, `schema.prisma`, `models/`, REST/GraphQL handlers, `app.py`, `main.py` (FastAPI/Flask) | **Backend** | API test cases |
+| Both frontend and backend signals present | **Full-stack** | Web test cases (frontend) + API test cases (backend) |
+
+This classification determines test type for everything that follows:
+- Frontend codebase → Web test cases only; do **not** ask for recordings
+- Backend codebase → API test cases only; skip Phase 2 (element-discoverer) entirely
+- Full-stack → both; do **not** ask for recordings
 
 ## Step 2 — Scope check
 
@@ -24,7 +47,7 @@ Before generating, scan the input and list all modules and features detected.
 If there are more than 3 modules or 10+ features, **ask the user**:
 > "I found these modules: [list]. Which ones should I cover first?"
 
-Generate only for the selected scope. Track what has been covered in
+Generate only for the selected scope. Track coverage in
 `test-coverage.md` (create or update it in the working directory):
 
 ```markdown
@@ -35,18 +58,296 @@ Generate only for the selected scope. Track what has been covered in
 | Auth | Register | Pending | — | — |
 ```
 
-## Step 3 — Generate test cases
+## Step 2b — Resolve existing utils
 
-For each module + feature combination, produce a markdown file named
-`test-cases-<module>-<feature>.md` (lowercase, hyphenated).
+Before generating test cases, check whether the user named any existing utils in their prompt (by util name or unique key, e.g. "use the login util" or "Util-00123").
+
+For each mentioned util, call `fetch_util_details` with the name or unique key as the `query` parameter to retrieve its UUID. Use that UUID directly in test case steps — do not create a new util for it.
+
+Also call `fetch_util_details` for the relevant module/feature to discover any other utils already in the project that could be reused instead of recreated.
+
+## Step 2c — Parallel Extraction
+
+Run all applicable branches **simultaneously** (they are independent). Each branch produces inputs used in Step 3 test case generation.
+
+---
+
+### Branch S — Swagger / OpenAPI spec provided
+
+Extract directly from the spec — no recordings needed, no codebase grep needed for constraints:
+
+- Field names, types, `minLength`, `maxLength`, `minimum`, `maximum`, `pattern`, `enum`, `required`
+- Field descriptions (often contain business rules)
+- `example` / `examples` values → use as +Ve test data
+- `4xx` response schemas → extract error message text and field-error mapping
+
+Produces: **Validation Schema Map**
+
+```
+Validation Schema Map:
+  Field: email
+    required: true, format: email
+    errors: { invalid: "Invalid email format" }   ← from 4xx response schema
+  Field: password
+    required: true, minlength: 8, maxlength: 128
+    errors: { too_short: "Password must be at least 8 characters" }
+```
+
+Web test cases from Swagger still need element discovery in Phase 2 unless a frontend codebase is also provided. API test cases from Swagger need no Phase 2.
+
+---
+
+### Branch FE — Frontend codebase provided
+
+Extract BOTH element identifiers AND validation constraints in one pass. No recordings needed. No browser launch needed.
+
+**FE-1: Extract element identifiers**
+
+Grep all component files (`**/*.tsx`, `**/*.jsx`, `**/*.vue`, `**/*.svelte`, `**/*.html`) for:
+
+| Attribute / Pattern | Element type | `el:` name suffix |
+|---|---|---|
+| `data-testid="x"` | any | from testid value + context |
+| `id="x"` on `<input>` or `<textarea>` | textbox | `_textbox` |
+| `name="x"` on `<input>` | textbox | `_textbox` |
+| `type="email"` on `<input>` | email field | `_textbox` |
+| `type="checkbox"` | checkbox | `_checkbox` |
+| `<select name="x">` | dropdown | `_dropdown` |
+| `<button>text</button>` or `role="button"` | button | `_button` |
+| `aria-label="x"` | any | from label + context |
+| `role="alert"`, `.error`, `.field-error`, `.validation-message` | error container | `_error_label` |
+| Form-level error: `.form-error`, `.alert-danger`, `role="alert"` with no field scope | error banner | `el:form_error_banner` |
+
+Build an **Element Map**:
+```
+Element Map:
+  el:email_textbox      → css: input[name="email"]           xpath: //input[@name='email']
+  el:password_textbox   → css: input[type="password"]        xpath: //input[@type='password']
+  el:login_button       → css: button[type="submit"]         xpath: //button[@type='submit']
+  el:email_error_label  → css: [data-testid="email-error"]   xpath: //*[@data-testid='email-error']
+  el:form_error_banner  → css: .form-error-banner            xpath: //*[contains(@class,'form-error-banner')]
+```
+
+If a `data-testid` is dynamic (e.g., `data-testid={field.id}`), note it:
+```
+el:username_textbox → <!-- DYNAMIC-TESTID: generated at runtime — verify selector --> css: input[name="username"]
+```
+
+**FE-2: Extract validation constraints**
+
+Grep for validation schemas imported by or adjacent to the component files:
+
+| Framework | Patterns to search |
+|---|---|
+| Zod | `z.object(`, `.min(`, `.max(`, `.email()`, `.regex(`, `.refine(` |
+| Yup | `yup.object(`, `.required(`, `.min(`, `.max(`, `.matches(` |
+| class-validator | `@IsEmail()`, `@MinLength(`, `@MaxLength(`, `@IsNotEmpty(`, `@Matches(` |
+| Pydantic | `Field(min_length=`, `Field(max_length=`, `field_validator`, `@validator` |
+| Django | `max_length=`, `MinLengthValidator`, `RegexValidator` |
+| HTML attributes | `required`, `maxlength=`, `minlength=`, `pattern=` |
+
+Also grep for error message strings: `errors.ts`, `messages.ts`, `constants.ts`, `i18n/*.json`, `locales/*.json`.
+
+Produces: **Element Map** + **Validation Schema Map**
+
+Write the Element Map as an `<!-- ELEMENT-MAP -->` comment block at the top of each generated `test-cases-*.md` file. Phase 2 reads this to fill Element Info tables without launching a browser.
+
+```markdown
+<!-- ELEMENT-MAP
+source: frontend-codebase
+elements:
+  - name: email_textbox, css: input[name="email"], xpath: //input[@name='email']
+  - name: password_textbox, css: input[type="password"], xpath: //input[@type='password']
+  - name: login_button, css: button[type="submit"], xpath: //button[@type='submit']
+  - name: email_error_label, css: [data-testid="email-error"], xpath: //*[@data-testid='email-error']
+-->
+```
+
+---
+
+### Branch BE — Backend codebase provided
+
+Extract API test case information:
+- Route definitions: HTTP method (GET/POST/PUT/DELETE/PATCH), path, handler
+- Request body schemas: field names, types, required fields, validation rules
+- Response schemas: success structure, error structure with error messages and status codes
+- Auth requirements: Bearer token, API key, session cookie
+
+Produces: **API Schema Map** for API test case generation. No Element Map. No Phase 2.
+
+---
+
+### Branch R — Playwright recordings provided (only when no frontend codebase)
+
+Only use this branch when no frontend codebase was provided (requirements doc or Swagger as the sole source for a Web feature).
+
+Parse both positive (happy path) and negative (error/validation) recordings:
+
+**From the positive recording** (`.spec.ts`):
+
+| Call pattern | What to extract |
+|---|---|
+| `page.goto('url')` | Page route |
+| `page.getByLabel('X').fill('Y')` | field: X, type: textbox, +Ve example: Y |
+| `page.getByLabel('X').selectOption('Y')` | field: X, type: dropdown, +Ve example: Y |
+| `page.getByRole('button', { name: 'X' }).click()` | button: X |
+| `page.getByTestId('X').fill('Y')` | testid: X, +Ve example: Y |
+| `expect(page.getByText('X')).toBeVisible()` | success verification text: X |
+
+**From the negative recording** (`.spec.ts`):
+- Error elements that appeared after failed submissions
+- Actual UI-visible error message text → use verbatim in -Ve test case assertions
+- Which field triggered which error
+
+Build a merged **Recording Map**:
+```
+Recording Map:
+  el:email_textbox     → playwright: page.getByLabel('Email')                | +Ve: admin@example.com
+  el:login_button      → playwright: page.getByRole('button',{name:'Sign In'})
+  el:email_error_label → playwright: page.getByText('Email is required')     | error: "Email is required"
+  el:form_error_banner → playwright: page.locator('.form-error')
+```
+
+`el:` naming convention: derive from label or testId using `snake_case` + `_type` suffix:
+- `"Email"` → `el:email_textbox`
+- `"Full Name"` → `el:full_name_textbox`
+- `"Sign In"` (button) → `el:login_button`
+- `data-testid="user-role-select"` → `el:user_role_dropdown`
+- Error element: field name + `_error_label`; form-level: `el:form_error_banner`
+
+Write as `<!-- RECORDING-MAP -->` block in each generated `test-cases-*.md`. Phase 2 reads this — no browser launch.
+
+---
+
+### Branch F — Fallback (requirements doc only, no codebase, no recordings)
+
+Mine the doc for:
+- Field names and types
+- Constraint language: "at least N characters" → `minlength: N`, "no more than N" → `maxlength: N`, "must be unique", "alphanumeric only"
+- Quoted error messages → use verbatim where present
+
+Flag every inferred constraint:
+```markdown
+<!-- CONSTRAINT-UNVERIFIED: maxlength assumed 255 for name field — verify against codebase or app -->
+```
+
+Add at the top of each generated file:
+```markdown
+<!-- VALIDATION-SOURCE: requirements-doc-only — constraints are inferred, not verified -->
+```
+
+No Element Map produced. Phase 2 will need to use Playwright browser (last resort) if a live URL is available.
+
+---
+
+### Branch V — HAR file provided (optional supplement)
+
+Parse `4xx` responses in the HAR file. For each failed request:
+- Extract request body (what invalid payload triggered the error)
+- Extract response body (the actual server-side validation error messages)
+- Map error messages to field names
+
+Add these server-side error messages to the Validation Schema Map. They may differ from frontend messages — include both in -Ve test cases where relevant.
+
+---
+
+## Step 3 — Identify utils and generate test cases (parallel)
+
+**Generate all markdown files in parallel — spawn one subagent per module/feature combination.** Each subagent receives:
+- The Validation Schema Map (from Branch S, FE-2, BE, F, or V)
+- The Element Map or Recording Map (from Branch FE or R, if available)
+- The element naming convention and autopilot step format
+- Its assigned output filename: `test-cases-<module>-<feature>.md`
+
+Each subagent operates independently. After all subagents complete, collect the files and proceed to Step 4.
+
+---
+
+**Before writing test cases, identify reusable flows (utils).** If a setup, teardown, or action flow appears as a precondition or repeated step in 2+ test cases, extract it as a util. Check Step 2b results first — use existing util UUIDs where available.
+
+For each new util, write a `UTIL-NNN` section at the top of the markdown file:
+
+```markdown
+## UTIL-001: Login as Standard User
+**Util Name:** login_as_standard_user
+**Test Mode:** Web
+**Feature:** [feature name]
+
+### Autopilot Steps
+navigate to "/login"
+enter "<email>" in "el:email_textbox"
+enter "<password>" in "el:password_textbox"
+click on "el:login_button"
+check element "el:dashboard_header" is visible in the page
+
+### Test Data
+| Field    | Value            | Type |
+|----------|------------------|------|
+| email    | user@example.com | text |
+| password | Test@123!        | text |
+
+### Element Info *(populated in Phase 2)*
+| Element          | Playwright Locator | CSS Selector | XPath |
+|------------------|--------------------|--------------|-------|
+| email_textbox    | —                  | —            | —     |
+| password_textbox | —                  | —            | —     |
+| login_button     | —                  | —            | —     |
+| dashboard_header | —                  | —            | —     |
+
+**Util UUID:** *(populated after save_claude_utils call)*
+```
+
+Test cases reference a util by UUID in steps (never by name):
+```
+execute util "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+```
+
+During Phase 1 (before `save_claude_utils` is called), use the util name as a placeholder: `execute util "login_as_standard_user"`. Replace with the real UUID once the backend returns it.
+
+**Test data override convention**
+
+Override is optional. Include override fields only when the requirement explicitly needs different data than the util's default.
+
+Format: `<util-field>_i<N>_<util-uuid>` where N = invocation number.
+
+```
+| email_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6    | admin@example.com | text |
+| email_i2_3fa85f64-5717-4562-b3fc-2c963f66afa6    | user@example.com  | text |
+| password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 | AdminPass@1       | text |
+```
+
+---
+
+**Test case generation rules:**
 
 Cover all of:
 - **Functional +Ve** — valid inputs, happy path, boundary-valid values
 - **Functional -Ve** — invalid inputs, missing fields, wrong types, auth failures
-- **Edge cases** — empty strings, max-length values, special characters,
-  concurrent actions, state-dependent flows
+- **Edge cases** — empty strings, max-length values, special characters, concurrent actions
+
+**For Web test cases (+Ve):**
+- Use navigation flow from the Recording Map, or infer from requirements/codebase
+- Use `+Ve example` values from the Element Map / Recording Map / spec as test data
+- Use `el:` names from the Element Map or Recording Map exactly as defined
+
+**For Web test cases (-Ve):**
+- Generate one dedicated -Ve test case per constraint in the Validation Schema Map:
+  - `required: true` → TC: "Submit without [field] → verify '[field] is required'"
+  - `minlength: 8` → TC: "Enter 7-char value → verify 'must be at least 8 characters'"
+  - `format: email` → TC: "Enter 'notanemail' → verify 'Invalid email format'"
+  - `maxlength: 50` → TC: "Enter 51-char value → verify error or truncation"
+- Use **exact error message text** from the Validation Schema Map (from schema, recording, or spec) in check steps: `check text of "el:email_error_label" is "Email is required"`
+- If no exact message is known, use a generic assertion and flag it: `<!-- ERROR-MESSAGE-UNVERIFIED -->`
+- Fields discovered in codebase/recording but absent from requirements: flag with `<!-- FIELD-NOT-IN-REQUIREMENTS: discovered in [codebase/recording] -->`
+
+**For API test cases:**
+- Steps use autopilot API format (see format reference below)
+- -Ve test cases: missing required fields (→ 400), wrong types, out-of-range values, unauthorized (→ 401/403), not found (→ 404)
+- No Element Info section needed for API test cases
 
 **Numbering:** TC-001, TC-002, … per file. Reset per file.
+
+---
 
 ## Test Case Template (use exactly, every time)
 
@@ -91,11 +392,9 @@ Cover all of:
 | Major    | Important feature broken, workaround exists |
 | Minor    | Cosmetic, edge case, low-impact |
 
-## Autopilot step format (use this in the `steps` list)
+## Autopilot step format
 
-Steps in the `steps` field of the template must be written in autopilot format so
-the backend can execute them without re-analysis. Reference element names with the
-`el:` prefix exactly as you named them in the Element Info table.
+Steps must be written in autopilot format. Reference element names with the `el:` prefix exactly as named in the Element Info table.
 
 **Web / Mobile steps:**
 ```
@@ -105,6 +404,7 @@ enter "<password>" in "el:password_textbox"
 click on "el:login_button"
 check element "el:dashboard_header" is visible in the page
 check text of "el:welcome_label" is "Welcome, Admin"
+check text of "el:email_error_label" is "Email is required"
 select option "Admin" in "el:role_dropdown"
 scroll down until "el:submit_button" is visible
 ```
@@ -121,9 +421,10 @@ call get "/api/users/$$created_user_id"
 check status code is 200
 ```
 
-Element name rules:
+**Element name rules:**
 - Use `el:` prefix in steps: `el:email_textbox`, `el:login_button`
 - Include element type in name: `textbox`, `button`, `link`, `dropdown`, `checkbox`, `label`
+- Error message containers: `el:fieldname_error_label` (field-level), `el:form_error_banner` (form-level)
 - Use `<placeholder>` for test data that varies: `"<email>"`, `"<password>"`
 - Use literal strings for fixed values: `"Admin"`, `"https://..."`, `200`
 
@@ -131,9 +432,18 @@ Element name rules:
 
 1. Update `test-coverage.md` with the newly covered modules/features.
 2. Tell the user:
+   - How many utils were identified (if any) and their names
    - How many test cases were created (total, +Ve count, -Ve count)
    - The filename(s) written
    - Which modules/features are still pending (from the tracker)
-3. Ask: *"Shall I proceed to Phase 2 to discover element locators using Playwright?"*
-   - If yes → hand off to the `element-discoverer` subagent with the filename(s)
-   - If no → stop here; the user can run Phase 2 later with `/push-to-autopilot` after manual enrichment
+   - Which input path was used (codebase / Swagger / recordings / fallback)
+3. If utils were identified, ask: *"I identified N reusable utils: [list names]. Shall I save them to the platform now so test cases can use their real UUIDs?"*
+   - If yes → call `save_claude_utils`, fill in **Util UUID** in the markdown, replace all `execute util "util_name"` placeholders with the real UUIDs returned
+   - If no → leave the util name placeholders; Phase 3 (`/push-to-autopilot`) will handle this before pushing
+4. Phase 2 handoff:
+   - **Backend-only test cases** → skip Phase 2 entirely. Ask: *"Shall I push these API test cases to the platform now?"*
+   - **Web test cases with frontend codebase** → Element Map was already written to the markdown. Ask: *"Element locators have been extracted from the codebase and written to the markdown. Shall I proceed to Phase 2 to fill in the Element Info tables? (This step is fast — no browser needed)"*
+   - **Web test cases with recordings** → Recording Map already written. Ask same as above.
+   - **Web test cases with no codebase / no recordings** → Ask: *"Shall I proceed to Phase 2 to discover element locators? (A live app URL will be needed for browser-based discovery)"*
+   - If user proceeds → hand off to the `element-discoverer` subagent with the filename(s)
+     - Element discovery order: util sections first, then test case sections

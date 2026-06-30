@@ -5,8 +5,22 @@ description: Phase 3 — read enriched manual test case markdown files and push 
 
 # Push Test Cases to Autopilot Backend — Phase 3
 
-Read the enriched markdown from Phase 1+2 and persist each test case to the
-autopilot backend using the `create_test_cases` MCP tool.
+Read the enriched markdown from Phase 1+2 and persist utils and test cases to
+the autopilot backend.
+
+## Step 0 — Save unpersisted utils
+
+Before pushing any test cases, scan each markdown file for `UTIL-NNN` sections
+where `Util UUID: *(populated after...)*` — these utils were identified but not
+yet saved to the platform.
+
+If any unpersisted utils are found:
+1. Call `save_claude_utils` for those utils (grouped by module)
+2. Fill in the **Util UUID** field in each UTIL-NNN section
+3. Replace all `execute util "util_name"` placeholders in test case steps with
+   the real UUIDs returned by the backend
+
+If all util UUIDs are already filled in, skip this step.
 
 ## Step 1 — Identify files to push
 
@@ -52,6 +66,37 @@ Build the `test_cases` array from the markdown file. Each item:
   "test_data": [
     {"field": "valid_email", "value": "user@example.com", "type": "text"},
     {"field": "valid_password", "value": "Test@123!", "type": "text"}
+  ]
+}
+```
+
+**Test cases that call utils** use `execute util "<uuid>"` in steps — always UUID, never util name. Test data overrides for util fields use the format `<field>_i<N>_<util-uuid>` where `N` is the invocation number. Override is optional; omit it if the util's default data is sufficient.
+
+```json
+{
+  "name": "TC-005: Create post as logged-in admin then regular user",
+  "description": "Verify post creation works for both admin and regular user roles",
+  "type": "Functional +Ve",
+  "priority": "Major",
+  "test_phase": "QA",
+  "steps": [
+    "execute util \"3fa85f64-5717-4562-b3fc-2c963f66afa6\"",
+    "navigate to \"/posts/create\"",
+    "enter \"<post_title>\" in \"el:title_input\"",
+    "click on \"el:submit_button\"",
+    "check element \"el:success_banner\" is visible in the page",
+    "execute util \"3fa85f64-5717-4562-b3fc-2c963f66afa6\""
+  ],
+  "elements": [
+    {"name": "title_input", "css_selector": "input#post-title"},
+    {"name": "submit_button", "css_selector": "button[type='submit']"},
+    {"name": "success_banner", "css_selector": ".alert-success"}
+  ],
+  "test_data": [
+    {"field": "post_title", "value": "My First Post", "type": "text"},
+    {"field": "email_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6", "value": "admin@example.com", "type": "text"},
+    {"field": "password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6", "value": "AdminPass@1", "type": "text"},
+    {"field": "email_i2_3fa85f64-5717-4562-b3fc-2c963f66afa6", "value": "user@example.com", "type": "text"}
   ]
 }
 ```

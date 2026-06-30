@@ -374,7 +374,7 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
         description="Test mode filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Web', 'Api', or 'Mobile'.",
     )
     testType: Optional[str] = Field(
-        None,
+        "Automation,AI Automated",
         description="Test type filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Automation', 'Manual', or 'AI Automated'.",
     )
     severity: Optional[str] = Field(
@@ -1156,3 +1156,123 @@ class GetDefectOrTaskDetailsOutput(BaseModel):
     targetDate: Optional[str] = Field(
         None, description="Target date of the defect or task"
     )
+
+
+class GetUtilsWithFiltersInput(BaseModel):
+    """Input for GET /utils/v1/get-all-utils/{projectId}"""
+
+    projectId: Optional[uuid.UUID] = Field(
+        None,
+        description="ID of the project to retrieve utils for. Falls back to the plugin default when omitted.",
+    )
+    query: Optional[str] = Field(
+        None, description="Search string to filter utils by name or unique key"
+    )
+    testMode: Optional[str] = Field(
+        None,
+        description="Test mode filter. Supports a single value or comma-separated values from 'Web', 'API', 'Mobile'.",
+    )
+    feature: Optional[str] = Field(
+        None,
+        description="Feature name filter. Supports a single value or comma-separated feature names.",
+    )
+    module: Optional[str] = Field(
+        None,
+        description="Module name filter. Supports a single value or comma-separated module names.",
+    )
+    page: int = Field(default=0, ge=0, description="Zero-based page number for pagination")
+    size: int = Field(default=10, ge=1, le=200, description="Number of results per page")
+    status: Optional[bool] = Field(
+        False, description="Filter by active status. false means active (not archived)."
+    )
+    deleted: Optional[bool] = Field(
+        False, description="Filter by deleted status. false means not deleted."
+    )
+
+    @field_validator("testMode", mode="before")
+    @classmethod
+    def validate_test_mode_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile"}
+        converted: list[str] = []
+        invalid: list[str] = []
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+        if invalid:
+            raise ValueError(
+                f"Invalid testMode value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_TEST_MODES))}"
+            )
+        return ",".join(converted)
+
+    @field_validator("feature", "module", mode="before")
+    @classmethod
+    def normalize_csv_fields(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_csv_filter(value)
+
+
+class UtilOutput(BaseModel):
+    """A single utility item returned by the utils list endpoint."""
+
+    id: uuid.UUID = Field(..., description="ID of the util")
+    uniqueKey: Optional[str] = Field(None, description="Unique key of the util, e.g. 'Util-01551'")
+    utilName: str = Field(..., description="Name of the util")
+    testMode: Optional[str] = Field(None, description="Test mode of the util: Web, API, or Mobile")
+    module: Optional[str] = Field(None, description="Module name the util belongs to")
+    feature: Optional[str] = Field(None, description="Feature name the util belongs to")
+    featureId: Optional[uuid.UUID] = Field(None, description="UUID of the feature the util belongs to")
+    testData: Optional[str] = Field(None, description="JSON-encoded test data for the util")
+    deleted: bool = Field(default=False, description="Whether the util is deleted")
+    deletedBy: Optional[str] = Field(None, description="Name of the user who deleted the util, if any")
+    fileIds: List[str] = Field(default_factory=list, description="List of file IDs attached to the util")
+    elementIds: List[str] = Field(default_factory=list, description="List of element IDs used by the util")
+
+
+class GetUtilsWithFiltersOutput(BaseModel):
+    """Paginated response from the utils list endpoint."""
+
+    content: List[UtilOutput] = Field(..., description="List of utils on the current page")
+    totalElements: int = Field(..., description="Total number of utils matching the filters")
+    totalPages: int = Field(..., description="Total number of pages")
+    page: int = Field(..., description="Current zero-based page number")
+    size: int = Field(..., description="Number of results per page")
+    last: bool = Field(..., description="Whether this is the last page")
+
+
+class ClaudeUtilInput(BaseModel):
+    """Input model for creating a new util."""
+
+    utilName: str = Field(..., description="Name of the util")
+    testMode: Literal["Web", "API", "Mobile"] = Field(..., description="Test mode for the util")
+    testData: List[TestDataEntry] = Field(default_factory=list, description="Test data fields for the util. Each field can be overridden by the calling test case using the naming convention: <field>_i<N>_<util-uuid>")
+    utilTestCaseSteps: List[str] = Field(..., description="List of test case steps for the util in autopilot format")
+    elements: List[ClaudeElement] = Field(default_factory=list, description="List of elements used by the util with real selectors discovered in Phase 2")
+    fileIds: Optional[List[str]] = Field([], description="List of file IDs attached to the util")
+    feature: uuid.UUID = Field(..., description="Feature ID associated with the util")
+
+
+class CreateUtilFromClaudeRequest(BaseModel):
+    """Batch request for creating utils from a Claude request — no LLM re-analysis."""
+    utils: List[ClaudeUtilInput] = Field(..., description="List of utils to create")
+    module: str = Field(..., description="Module name for the utils")
+    projectId: Optional[uuid.UUID] = Field(None, description="Project ID for the utils. Falls back to plugin default when omitted.")
+    user_id: Optional[uuid.UUID] = Field(None, description="User ID of the creator. Falls back to plugin default when omitted.")
+    created_by: str = Field(default="claude-code", description="Name of the user creating the utils")
+
+
+class SavedUtilItem(BaseModel):
+    """A single util item returned after creation."""
+    id: uuid.UUID = Field(..., description="UUID of the created util")
+    utilName: str = Field(..., description="Name of the util")
+    uniqueKey: Optional[str] = Field(None, description="Unique key of the util, e.g. 'Util-01551'")
+
+
+class SaveUtilsOutput(BaseModel):
+    """Response from the save_claude_utils tool."""
+    created: List[SavedUtilItem] = Field(..., description="List of created util items with their UUIDs")
+    count: int = Field(..., description="Total number of utils created")
