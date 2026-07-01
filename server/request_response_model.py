@@ -1,4 +1,3 @@
-
 from typing import List, Literal, Optional
 import uuid
 
@@ -50,6 +49,7 @@ def _normalize_csv_filter(value: Optional[str]) -> Optional[str]:
         return None
     return ",".join(parts)
 
+
 class FeatureIdByNameOrUniqueKeyInput(BaseModel):
     projectId: Optional[uuid.UUID] = Field(
         None, description="ID of the project for which to retrieve feature ID"
@@ -58,12 +58,14 @@ class FeatureIdByNameOrUniqueKeyInput(BaseModel):
         ..., description="Name or unique key of the feature to retrieve ID for"
     )
 
+
 class FeatureCreationOutput(BaseModel):
     id: uuid.UUID = Field(..., description="ID of the feature")
     name: str = Field(..., description="Name of the feature")
     uniqueKey: Optional[str] = Field(
         None, description="Unique key generated for the feature"
     )
+
 
 class FeatureCreationInput(BaseModel):
     name: str = Field(
@@ -98,6 +100,7 @@ class ModuleOutputResponse(BaseModel):
     uniqueKey: Optional[str] = Field(
         None, description="Unique key generated for the module"
     )
+
 
 class ModuleCreationInput(BaseModel):
     moduleName: str = Field(
@@ -140,6 +143,7 @@ class GetEnvironmentDetailsByNameOrUniqueKeyInput(BaseModel):
         None, description="ID of the project for which to retrieve module ID"
     )
 
+
 class CreateWebEnvironmentOutput(BaseModel):
     """Model representing the output of creating a Web Environment"""
 
@@ -162,6 +166,7 @@ class CreateWebEnvironmentOutput(BaseModel):
         default=False,
         description="Indicates if book is enabled for the web environment",
     )
+
 
 class GetUserDetailsByIdOrEmailOrUniqueKeyInput(BaseModel):
     """Model representing the input for retrieving user details by ID, email, or unique key"""
@@ -201,6 +206,7 @@ class GetUserDetailsOutput(BaseModel):
         ..., description="List of web and mobile environments associated with the user"
     )
 
+
 class TestRunCreationInput(BaseModel):
     """Model representing the input for creating a test run"""
 
@@ -208,8 +214,8 @@ class TestRunCreationInput(BaseModel):
     projectId: Optional[uuid.UUID] = Field(
         None, description="ID of the project for which the test run is being created"
     )
-    createdBy: Optional[str] = Field(
-        None, description="Name (EmpName) of the user who created the test run"
+    createdBy: str = Field(
+        ..., description="Name (EmpName) of the user who created the test run"
     )
 
 
@@ -221,6 +227,7 @@ class TestRunCreationOutput(BaseModel):
     uniqueKey: Optional[str] = Field(
         None, description="Unique key generated for the created test run"
     )
+
 
 class TestRunDetailsInput(BaseModel):
     """Model representing the input for retrieving test run details"""
@@ -305,7 +312,7 @@ class TestRunDetailsOutput(BaseModel):
     testCaseCount: Optional[int] = Field(
         None, description="Number of test cases in the test run"
     )
-    automationStatus: Optional[Literal["Completed", "New"]] = Field(
+    automationStatus: Optional[Literal["Completed", "New", "In Progress"]] = Field(
         None, description="Automation status of the test run"
     )
     scheduleTime: Optional[str] = Field(
@@ -323,6 +330,7 @@ class TestRunDetailsOutput(BaseModel):
     passPercentage: Optional[float | str] = Field(
         None, description="Pass percentage of the test run"
     )
+
 
 class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
     """Model representing the input for adding or removing test cases from a test run"""
@@ -533,6 +541,7 @@ class GetTestCasesUUIDByUniqueKeyInput(BaseModel):
         False, description="Filter test cases by deleted status, true means deleted"
     )
 
+
 class GetEnvironmentsAssignedToUserInput(BaseModel):
     """Model representing the input for retrieving environments assigned to a user"""
 
@@ -567,6 +576,7 @@ class GetEnvironmentsAssignedToUserOutput(BaseModel):
     deleted: bool = Field(
         ..., description="Indicates if the assigned environment is deleted or not"
     )
+
 
 class GetProjectsAssignedToUserInput(BaseModel):
     """Model representing the input for retrieving projects assigned to a user"""
@@ -754,6 +764,7 @@ class GetTestCasesWithFiltersInAProjectOutputLarge(BaseModel):
     id: uuid.UUID = Field(..., description="ID of the test case")
     uniqueKey: Optional[str] = Field(None, description="Unique key of the test case")
     testCaseName: str = Field(..., description="Title of the test case")
+
 
 class RunTestCaseInput(BaseModel):
     """Model representing the input for running a test case"""
@@ -978,43 +989,85 @@ class TestCaseResultOutput(BaseModel):
         description="Complete log of test case with each test step and its execution status",
     )
 
+
 class TestDataEntry(BaseModel):
-    field: str = Field(..., description="Name or placeholder name of the test data field")
+    field: str = Field(
+        ..., description="Name or placeholder name of the test data field"
+    )
     value: str = Field(..., description="Value of the test data field")
-    type: str = Field(default="text", description="Type of the test data field. For every thing it is 'text' when upload file then it is 'file'")
+    type: str = Field(
+        default="text",
+        description="Type of the test data field. For every thing it is 'text' when upload file then it is 'file'",
+    )
+
 
 class ClaudeElement(BaseModel):
     """An element provided by Claude with real locators (Phase 2 output)."""
-    name: str = Field(..., description="Name of the element, e.g., 'email_textbox' — no el: prefix")
-    css_selector: Optional[str] = Field(default=None, description="Primary CSS selector saved to DB")
-    xpath: Optional[str] = Field(default=None, description="Fallback XPath selector, stored for reference")
+
+    name: str = Field(
+        ..., description="Name of the element, e.g., 'email_textbox' — no el: prefix"
+    )
+    css_selector: Optional[str] = Field(
+        default=None, description="Primary CSS selector saved to DB"
+    )
+    xpath: Optional[str] = Field(
+        default=None, description="Fallback XPath selector, stored for reference"
+    )
 
 
 class ClaudeTestCaseInput(BaseModel):
     """A single test case authored by Claude in Phase 1/2."""
-    name: str = Field(..., description="Name of the test case, e.g., 'Login with valid credentials'")
+
+    name: str = Field(
+        ..., description="Name of the test case, e.g., 'Login with valid credentials'"
+    )
     description: str = Field(..., description="Description of the test case")
-    type: Literal["Functional +Ve", "Functional -Ve", "Other"] = Field(default="Functional +Ve", description="Type of the test case, e.g., 'Functional +Ve' or 'Functional -Ve'")
-    priority: Literal["Minor", "Major", "Blocker", "Critical"] = Field(default="Major", description="Priority of the test case, e.g., 'Minor', 'Major', 'Blocker', 'Critical'")
-    test_phase: str = Field(default="QA", description="Test phase of the test case, e.g., 'QA'")
-    steps: List[str] = Field(..., description="Steps of the test case, already in autopilot format")
-    elements: List[ClaudeElement] = Field(default_factory=list, description="List of elements involved in the test case")
-    test_data: List[TestDataEntry] = Field(default_factory=list, description="List of test data entries for the test case")
+    type: Literal["Functional +Ve", "Functional -Ve", "Other"] = Field(
+        default="Functional +Ve",
+        description="Type of the test case, e.g., 'Functional +Ve' or 'Functional -Ve'",
+    )
+    priority: Literal["Minor", "Major", "Blocker", "Critical"] = Field(
+        default="Major",
+        description="Priority of the test case, e.g., 'Minor', 'Major', 'Blocker', 'Critical'",
+    )
+    test_phase: str = Field(
+        default="QA", description="Test phase of the test case, e.g., 'QA'"
+    )
+    steps: List[str] = Field(
+        ..., description="Steps of the test case, already in autopilot format"
+    )
+    elements: List[ClaudeElement] = Field(
+        default_factory=list, description="List of elements involved in the test case"
+    )
+    test_data: List[TestDataEntry] = Field(
+        default_factory=list, description="List of test data entries for the test case"
+    )
 
 
 class CreateTestCaseFromClaudeRequest(BaseModel):
     """Batch request from the Claude plugin — no LLM re-analysis needed."""
+
     test_cases: List[ClaudeTestCaseInput]
     module: str = Field(..., description="Module name for the test cases")
     feature: uuid.UUID = Field(..., description="Feature ID for the test cases")
-    test_mode: Literal["Web", "API", "Mobile"] = Field(..., description="Test mode, e.g., 'Web', 'API', 'Mobile'")
-    project_id: Optional[uuid.UUID] = Field(None, description="Project ID for the test cases")
+    test_mode: Literal["Web", "API", "Mobile"] = Field(
+        ..., description="Test mode, e.g., 'Web', 'API', 'Mobile'"
+    )
+    project_id: Optional[uuid.UUID] = Field(
+        None, description="Project ID for the test cases"
+    )
     user_id: Optional[uuid.UUID] = Field(None, description="User ID for the test cases")
     created_by: str = Field(..., description="Name of the user creating the test cases")
-    browser_type: Literal["Chrome", "Firefox", "Safari", "Edge"] = Field(default="Chrome", description="Browser type for the test cases, e.g., 'Chrome'")
-    platform: str = Field(default="", description="Platform for the test cases, e.g., 'web', 'mobile', 'api'")
+    browser_type: Literal["Chrome", "Firefox", "Safari", "Edge"] = Field(
+        default="Chrome", description="Browser type for the test cases, e.g., 'Chrome'"
+    )
+    platform: str = Field(
+        default="",
+        description="Platform for the test cases, e.g., 'web', 'mobile', 'api'",
+    )
     env_id: str = Field(default="", description="Environment ID for the test cases")
     apk_id: str = Field(default="", description="APK ID for the test cases")
+
 
 class GetDefectOrTaskDetailsByNameOrUniqueKeyInput(BaseModel):
     """Model representing the input for retrieving defect or task details by name or unique key"""
@@ -1180,8 +1233,12 @@ class GetUtilsWithFiltersInput(BaseModel):
         None,
         description="Module name filter. Supports a single value or comma-separated module names.",
     )
-    page: int = Field(default=0, ge=0, description="Zero-based page number for pagination")
-    size: int = Field(default=10, ge=1, le=200, description="Number of results per page")
+    page: int = Field(
+        default=0, ge=0, description="Zero-based page number for pagination"
+    )
+    size: int = Field(
+        default=10, ge=1, le=200, description="Number of results per page"
+    )
     status: Optional[bool] = Field(
         False, description="Filter by active status. false means active (not archived)."
     )
@@ -1220,24 +1277,42 @@ class UtilOutput(BaseModel):
     """A single utility item returned by the utils list endpoint."""
 
     id: uuid.UUID = Field(..., description="ID of the util")
-    uniqueKey: Optional[str] = Field(None, description="Unique key of the util, e.g. 'Util-01551'")
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key of the util, e.g. 'Util-01551'"
+    )
     utilName: str = Field(..., description="Name of the util")
-    testMode: Optional[str] = Field(None, description="Test mode of the util: Web, API, or Mobile")
+    testMode: Optional[str] = Field(
+        None, description="Test mode of the util: Web, API, or Mobile"
+    )
     module: Optional[str] = Field(None, description="Module name the util belongs to")
     feature: Optional[str] = Field(None, description="Feature name the util belongs to")
-    featureId: Optional[uuid.UUID] = Field(None, description="UUID of the feature the util belongs to")
-    testData: Optional[str] = Field(None, description="JSON-encoded test data for the util")
+    featureId: Optional[uuid.UUID] = Field(
+        None, description="UUID of the feature the util belongs to"
+    )
+    testData: Optional[str] = Field(
+        None, description="JSON-encoded test data for the util"
+    )
     deleted: bool = Field(default=False, description="Whether the util is deleted")
-    deletedBy: Optional[str] = Field(None, description="Name of the user who deleted the util, if any")
-    fileIds: List[str] = Field(default_factory=list, description="List of file IDs attached to the util")
-    elementIds: List[str] = Field(default_factory=list, description="List of element IDs used by the util")
+    deletedBy: Optional[str] = Field(
+        None, description="Name of the user who deleted the util, if any"
+    )
+    fileIds: List[str] = Field(
+        default_factory=list, description="List of file IDs attached to the util"
+    )
+    elementIds: List[str] = Field(
+        default_factory=list, description="List of element IDs used by the util"
+    )
 
 
 class GetUtilsWithFiltersOutput(BaseModel):
     """Paginated response from the utils list endpoint."""
 
-    content: List[UtilOutput] = Field(..., description="List of utils on the current page")
-    totalElements: int = Field(..., description="Total number of utils matching the filters")
+    content: List[UtilOutput] = Field(
+        ..., description="List of utils on the current page"
+    )
+    totalElements: int = Field(
+        ..., description="Total number of utils matching the filters"
+    )
     totalPages: int = Field(..., description="Total number of pages")
     page: int = Field(..., description="Current zero-based page number")
     size: int = Field(..., description="Number of results per page")
@@ -1248,31 +1323,56 @@ class ClaudeUtilInput(BaseModel):
     """Input model for creating a new util."""
 
     utilName: str = Field(..., description="Name of the util")
-    testMode: Literal["Web", "API", "Mobile"] = Field(..., description="Test mode for the util")
-    testData: List[TestDataEntry] = Field(default_factory=list, description="Test data fields for the util. Each field can be overridden by the calling test case using the naming convention: <field>_i<N>_<util-uuid>")
-    utilTestCaseSteps: List[str] = Field(..., description="List of test case steps for the util in autopilot format")
-    elements: List[ClaudeElement] = Field(default_factory=list, description="List of elements used by the util with real selectors discovered in Phase 2")
-    fileIds: Optional[List[str]] = Field([], description="List of file IDs attached to the util")
+    testMode: Literal["Web", "API", "Mobile"] = Field(
+        ..., description="Test mode for the util"
+    )
+    testData: List[TestDataEntry] = Field(
+        default_factory=list,
+        description="Test data fields for the util. Each field can be overridden by the calling test case using the naming convention: <field>_i<N>_<util-uuid>",
+    )
+    utilTestCaseSteps: List[str] = Field(
+        ..., description="List of test case steps for the util in autopilot format"
+    )
+    elements: List[ClaudeElement] = Field(
+        default_factory=list,
+        description="List of elements used by the util with real selectors discovered in Phase 2",
+    )
+    fileIds: Optional[List[str]] = Field(
+        [], description="List of file IDs attached to the util"
+    )
     feature: uuid.UUID = Field(..., description="Feature ID associated with the util")
 
 
 class CreateUtilFromClaudeRequest(BaseModel):
     """Batch request for creating utils from a Claude request — no LLM re-analysis."""
+
     utils: List[ClaudeUtilInput] = Field(..., description="List of utils to create")
     module: str = Field(..., description="Module name for the utils")
-    projectId: Optional[uuid.UUID] = Field(None, description="Project ID for the utils. Falls back to plugin default when omitted.")
-    user_id: Optional[uuid.UUID] = Field(None, description="User ID of the creator. Falls back to plugin default when omitted.")
-    created_by: str = Field(default="claude-code", description="Name of the user creating the utils")
+    projectId: Optional[uuid.UUID] = Field(
+        None,
+        description="Project ID for the utils. Falls back to plugin default when omitted.",
+    )
+    userName: str = Field(
+        default="claude-code", description="Name of the user creating the utils"
+    )
+    user_id: str = Field("", description="ID of the user creating the utils")
+    token: Optional[str] = Field(None, description="Authentication token for the user")
 
 
 class SavedUtilItem(BaseModel):
     """A single util item returned after creation."""
+
     id: uuid.UUID = Field(..., description="UUID of the created util")
     utilName: str = Field(..., description="Name of the util")
-    uniqueKey: Optional[str] = Field(None, description="Unique key of the util, e.g. 'Util-01551'")
+    uniqueKey: Optional[str] = Field(
+        None, description="Unique key of the util, e.g. 'Util-01551'"
+    )
 
 
 class SaveUtilsOutput(BaseModel):
     """Response from the save_claude_utils tool."""
-    created: List[SavedUtilItem] = Field(..., description="List of created util items with their UUIDs")
+
+    created: List[SavedUtilItem] = Field(
+        ..., description="List of created util items with their UUIDs"
+    )
     count: int = Field(..., description="Total number of utils created")
