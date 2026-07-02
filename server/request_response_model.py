@@ -382,7 +382,7 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
         description="Test mode filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Web', 'Api', or 'Mobile'.",
     )
     testType: Optional[str] = Field(
-        "Automation,AI Automated",
+        None,
         description="Test type filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Automation', 'Manual', or 'AI Automated'.",
     )
     severity: Optional[str] = Field(
@@ -466,7 +466,6 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
 
         canonical_map = {
             "automation": "Automation",
-            "manual": "Manual",
             "ai automated": "AI Automated",
         }
         converted: list[str] = []
@@ -641,7 +640,7 @@ class GetTestCasesWithFiltersInAProjectInput(BaseModel):
         description="Name of the module to filter test cases, can use combination of module names in comma separated format (e.g. Module1,Module2) to filter test cases belonging to any of the provided modules",
     )
     featureName: Optional[str] = Field(
-        None, description="Name of the feature to filter test cases"
+        None, description="Name of the feature to filter test cases, can use combination of feature names in comma separated format (e.g. Feature1,Feature2) to filter test cases belonging to any of the provided features"
     )
 
     @field_validator("testMode", mode="before")
@@ -952,9 +951,6 @@ class ElementCreationOutput(BaseModel):
         ...,
         description="Name of the created element",
     )
-    uniqueKey: Optional[str] = Field(
-        None, description="Unique key generated for the created element"
-    )
     createdBy: str = Field(
         ...,
         description="Name of the user who created the element",
@@ -1162,7 +1158,7 @@ class GetDefectOrTaskDetailsOutput(BaseModel):
 
     id: uuid.UUID = Field(..., description="ID of the defect or task")
     title: str = Field(..., description="Title of the defect or task")
-    description: str = Field(..., description="Description of the defect or task")
+    description: str | None = Field(None, description="Description of the defect or task")
     priority: Optional[Literal["Minor", "Major", "Blocker", "Critical"]] = Field(
         None, description="Priority of the defect or task"
     )

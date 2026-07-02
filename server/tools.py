@@ -319,31 +319,6 @@ async def fetch_test_run_failure_details(
 
 
 @mcp.tool()
-async def fetch_element_details(element_id: str) -> dict[str, Any]:
-    """Fetch UI element details by ID (name, selector, module, feature, testMode).
-
-    Call this when a failure trace references an element ID to understand which
-    UI element was involved in the failure.
-    """
-    resp = await client.get_backend(f"/elements/v1/{element_id}")
-    if resp["status_code"] != 200:
-        if resp["status_code"] == 500 or "JWT" in str(resp["data"]):
-            return {
-                "error": f"Cannot fetch element {element_id}: invalid token or server error"
-            }
-        raise ValueError(f"Failed to fetch element details: {resp['data']}")
-    el = resp["data"]
-    return {
-        "id": el.get("id"),
-        "name": el.get("name"),
-        "selector": el.get("selector"),
-        "module": el.get("module"),
-        "feature": el.get("feature"),
-        "testMode": el.get("testMode"),
-    }
-
-
-@mcp.tool()
 async def fetch_util_details(
     input: GetUtilsWithFiltersInput,
 ) -> GetUtilsWithFiltersOutput:
@@ -410,7 +385,7 @@ async def save_claude_utils(request: CreateUtilFromClaudeRequest) -> dict[str, A
     payload = {
         "utils": [u.model_dump(mode="json") for u in request.utils],
         "module": request.module,
-        "project_id": str(_project(request.projectId)),
+        "project_id": _project(request.projectId),
         "userName": request.userName or "claude-code",
         "user_id": request.user_id,
         "token": request.token,
@@ -478,7 +453,7 @@ async def create_feature(input: FeatureCreationInput) -> FeatureCreationOutput:
         "featureName": input.name,
         "description": input.description,
         "companyId": str(input.companyId),
-        "projectId": str(_project(input.projectId)),
+        "projectId": _project(input.projectId),
     }
     resp = await client.post_backend(f"/feature/v1/save/{input.moduleId}", payload)
     if resp["status_code"] == 200:
@@ -507,7 +482,7 @@ async def create_module(input: ModuleCreationInput) -> ModuleOutputResponse:
         "moduleName": input.moduleName,
         "description": input.description,
         "companyId": str(input.companyId),
-        "projectId": str(_project(input.projectId)),
+        "projectId": _project(input.projectId),
     }
     resp = await client.post_backend(f"/module/v1/save", payload)
     if resp["status_code"] == 200:
@@ -746,7 +721,7 @@ async def get_test_runs_with_filters(
     """
 
     base_params = {
-        "projectId": str(_project(input.projectId)),
+        "projectId": _project(input.projectId),
         "query": input.nameOrUniqueKey,
         "status": input.status,
         "createdBy": input.createdBy,
@@ -841,7 +816,7 @@ async def add_or_remove_test_cases_from_test_run(
         print(f"Resolving unique keys to IDs for: {unique_key_terms}")
         resolved_unique_key_ids = await get_test_cases_uuid_by_unique_keys(
             GetTestCasesUUIDByUniqueKeyInput(
-                id=_project(input.projectId),
+                id=uuid.UUID(_project(input.projectId)),
                 uniqueKeys=unique_key_terms,
                 active=False,
                 deleted=False,
@@ -900,7 +875,7 @@ async def add_or_remove_test_cases_from_test_run(
             filtered_test_case_ids.extend(
                 str(test_case.get("id"))
                 for test_case in test_cases
-                if test_case.get("id")
+                if test_case.get("id") and test_case.get("testType", "").lower() != 'manual'
             )
 
             # Stop conditions for different response pagination styles
@@ -1120,7 +1095,7 @@ async def get_test_cases_uuid_by_unique_keys(
 
     async def _fetch_uuid_for_key(unique_key: str) -> uuid.UUID:
         params = {
-            "id": str(input.id),
+            "id": _project(input.id),
             "query": unique_key,
             "deleted": input.deleted,
             "page": "0",
@@ -1185,9 +1160,9 @@ async def run_test_case(input: RunTestCaseInput) -> str:
         payload,
     )
     if resp["status_code"] == 200:
-        return f"Test case with ID {input.testCaseId} executed successfully"
+        return f"Test case with ID {input.testCaseId} execution started successfully, You can wait for the result"
     else:
-        raise Exception(f"Failed to execute test case: {resp['data']}")
+        raise Exception(f"Failed to execute test case: {resp['data']}, DON'T call wait_for_test_case_result")
 
 
 @mcp.tool("schedule_test_run")
@@ -1286,7 +1261,6 @@ async def create_element(input: ElementCreationInput) -> ElementCreationOutput:
         return ElementCreationOutput(
             id=uuid.UUID(data.get("id", "")),
             name=str(data.get("name", "")),
-            uniqueKey=str(data.get("uniqueKey", "")),
             selector=str(data.get("selector", "")),
             createdBy=str(data.get("createdBy", "")),
         )
@@ -1295,9 +1269,32 @@ async def create_element(input: ElementCreationInput) -> ElementCreationOutput:
             f"Failed to create element: {resp['data']} with payload: {payload}"
         )
 
+@mcp.tool()
+async def fetch_element_details_by_id(element_id: str) -> dict[str, Any]:
+    """Fetch UI element details by ID (name, selector, module, feature, testMode).
 
-@mcp.tool("get_element_id_by_name_or_unique_key")
-async def get_element_id_by_name_or_unique_key(
+    Call this when a failure trace references an element ID to understand which
+    UI element was involved in the failure.
+    """
+    resp = await client.get_backend(f"/elements/v1/{element_id}")
+    if resp["status_code"] != 200:
+        if resp["status_code"] == 500 or "JWT" in str(resp["data"]):
+            return {
+                "error": f"Cannot fetch element {element_id}: invalid token or server error"
+            }
+        raise ValueError(f"Failed to fetch element details: {resp['data']}")
+    el = resp["data"]
+    return {
+        "id": el.get("id"),
+        "name": el.get("name"),
+        "selector": el.get("selector"),
+        "module": el.get("module"),
+        "feature": el.get("feature"),
+        "testMode": el.get("testMode"),
+    }
+
+@mcp.tool("get_element_details_by_name_or_unique_key")
+async def get_element_details_by_name_or_unique_key(
     input: ModuleIdByNameOrUniqueKeyInput,
 ) -> ElementOutputResponse | None:
     """
@@ -1369,7 +1366,9 @@ async def wait_for_test_execution_completion(
     input: WaitForCaseExecutionInput,
 ) -> TestCaseResultOutput:
     """
-    Wait for the completion of a test execution by its ID.
+    Wait for the completion of a test case execution by its ID. This tool will poll the backend until the test case execution completes.
+    
+    IMPORTANT: DO NOT call this tool if the test case execution is not yet started i.e. run_test_case tool does not return a result yet.
 
     Args:
         input (WaitForCaseExecutionInput): Input containing details for waiting for execution of a test case.
