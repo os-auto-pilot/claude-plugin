@@ -33,10 +33,21 @@
       "title": "Default project ID",
       "description": "Project UUID used when a tool call doesn't specify one."
     },
+    "default_company_id": {
+      "type": "string",
+      "title": "Default company ID",
+      "description": "Company UUID used when a tool call doesn't specify one."
+    },
     "default_user_id": {
       "type": "string",
       "title": "Default user ID",
       "description": "User UUID used when a tool call doesn't specify one (e.g. for runs)."
+    },
+    "backend_url": {
+      "type": "string",
+      "title": "Backend URL",
+      "description": "Base URL of the backend service (passed as BACKEND_URL to the MCP server).",
+      "default": "http://localhost:8088"
     }
   }
 }

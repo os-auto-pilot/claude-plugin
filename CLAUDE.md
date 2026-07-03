@@ -10,16 +10,11 @@ This is a Claude Code plugin (MCP server) that integrates Claude with the Onieso
 
 ## Project Connection Details
 
-| Key | Value |
-|---|---|
-| Platform URL | http://localhost:8088 |
-| API Key | Oniesoft@123dfgewerrt |
-| Project ID | 248af507-c75c-4590-95b8-4145891df8d0 |
-| User ID | 15eb541f-2dbe-403f-8191-9e1ad15fc0ef |
-| Company ID | 43e4f7c3-1a17-4627-8d95-49fd59076851 |
-| Module ID | da43581f-41ff-4d88-b41e-2aff8010d4da |
+At the start of each session, read `.mcp.json` to understand the MCP server configuration and the env var mappings (project ID, user ID, API URLs, API key). Use those values for any MCP tool calls that require `projectId`, `userId`, or related fields.
 
-Use these values for any `oniesoft-test-platform` MCP tool calls that require `token`, `projectId`, or related fields.
+## Tool Scope Rules
+
+`get_autopilot_steps` — **only call this tool from within the `/analyze-requirements` skill**, during Step 2c before writing any autopilot steps. Never call it in any other skill, agent, or inline conversation.
 
 ## Agent Delegation Rules
 
@@ -86,42 +81,10 @@ password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 = AdminPass@1
 | `save_claude_test_cases` | Batch-create test cases authored by Claude; no LLM re-analysis |
 | `fetch_util_details` | Search/filter existing utils by name, module, feature, testMode |
 | `create_util` | Create a single util directly via backend (use `save_claude_utils` for Claude-authored batches) |
-| `run_tests` | Execute a test case or test run; returns execution ID |
-| `get_run_status` | Poll execution status |
 | `fetch_test_run_results` | Get all results for a completed run |
 | `fetch_test_run_failure_details` | Get stack traces for failed cases |
 | `get_feature_id_by_name_or_unique_key` | Resolve feature UUID — needed before pushing test cases or utils |
 
-## Backend Architecture (three services)
-
-| Service | Env var | Default | Used for |
-|---|---|---|---|
-| Platform API (`agentic_ai_be`) | `PLATFORM_API_URL` | `http://localhost:8000` | Claude-authored test case + util creation, AI analysis |
-| Backend (`oniesoft_be`) | `BACKEND_URL` | `http://localhost:8088` | Test runs, elements, modules, features, utils CRUD |
-| Execution API (`python_tool`) | `EXECUTION_API_URL` | `http://localhost:3232` | Running tests, polling status, stopping runs |
-
 ## Pending Backend Work
 
 `POST /api/utils/create-from-claude` needs to be implemented on the Platform API (`agentic_ai_be`). The full spec is in `docs/backend-utils-create-from-claude.md`. Until this endpoint exists, `save_claude_utils` will return a 404/500 — the rest of the plugin is complete.
-
-## Autopilot Step Format
-
-Steps must be in autopilot format for both test cases and utils:
-
-```
-# Web / Mobile
-navigate to "https://app.example.com/login"
-enter "<email>" in "el:email_textbox"
-click on "el:login_button"
-check element "el:dashboard_header" is visible in the page
-select option "Admin" in "el:role_dropdown"
-execute util "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-
-# API
-with bearer auth to login endpoint "/auth/login" using payload {"email": "<email>", "password": "<password>"}
-call post "/api/users"
-check status code is 201
-store the "$.id" in "created_user_id"
-```
-
-Element names use the `el:` prefix in steps and include the element type: `el:email_textbox`, `el:login_button`, `el:role_dropdown`.

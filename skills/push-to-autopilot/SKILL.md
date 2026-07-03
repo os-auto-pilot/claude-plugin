@@ -8,6 +8,8 @@ description: Phase 3 — read enriched manual test case markdown files and push 
 Read the enriched markdown from Phase 1+2 and persist utils and test cases to
 the autopilot backend.
 
+> **IMPORTANT — File location:** All markdown files (`test-cases-*.md`, `test-coverage.md`) live in the **current working directory** — the folder the user launched Claude from. Always read from and write to the cwd, never the plugin directory.
+
 ## Step 0 — Save unpersisted utils
 
 Before pushing any test cases, scan each markdown file for `UTIL-NNN` sections

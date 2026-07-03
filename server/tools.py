@@ -20,7 +20,7 @@ from server.request_response_model import *
 
 from . import client
 
-mcp = FastMCP("oniesoft-test-platform")
+mcp = FastMCP("auto-pilot plugin")
 
 
 def _project(project_id: uuid.UUID | None) -> str:
@@ -80,6 +80,25 @@ def _user(user_id: uuid.UUID | None) -> str | None:
 
 
 @mcp.tool()
+def get_autopilot_steps(test_mode: str) -> list[dict]:
+    """Return the complete list of supported autopilot step templates for a given test mode.
+
+    ⚠️  SKILL-SCOPED TOOL — only call this from within the /analyze-requirements skill,
+    during Step 2c (parallel extraction) BEFORE writing any autopilot steps.
+    Do NOT call this tool in any other context or skill.
+
+    Args:
+        test_mode: "web", "mobile", or "api"
+
+    Returns:
+        List of step definitions — each has "name", "description", "step" (the exact
+        template string to use), and "keywords". Write autopilot steps using ONLY
+        the "step" templates returned here.
+    """
+    payload = {"test_mode": test_mode}
+    return client.get_platform("/api/test-steps", params=payload)
+
+@mcp.tool()
 async def save_claude_test_cases(
     request: CreateTestCaseFromClaudeRequest,
 ) -> dict[str, Any]:
@@ -129,58 +148,58 @@ async def create_test_case_from_defect(
 
 
 # ---------------------------------------------------------------- execution ----
-@mcp.tool()
-async def run_tests(
-    test_case_id: str | None = None,
-    test_run_id: str | None = None,
-    project_id: uuid.UUID | None = None,
-    user_id: uuid.UUID | None = None,
-    browser_type: str = "chrome",
-    platform: str = "",
-    env_id: str = "-",
-    apk_id: str = "",
-    parallel: bool = False,
-) -> dict[str, Any]:
-    """Execute a test case or a whole test run on the Oniesoft execution engine.
+# @mcp.tool()
+# async def run_tests(
+#     test_case_id: str | None = None,
+#     test_run_id: str | None = None,
+#     project_id: uuid.UUID | None = None,
+#     user_id: uuid.UUID | None = None,
+#     browser_type: str = "chrome",
+#     platform: str = "",
+#     env_id: str = "-",
+#     apk_id: str = "",
+#     parallel: bool = False,
+# ) -> dict[str, Any]:
+#     """Execute a test case or a whole test run on the Oniesoft execution engine.
 
-    DIFFERENTIATORS (beyond Playwright-only tools):
-      * Native MOBILE: set platform="local,<tunnel-id>" and apk_id=<app id> to run
-        real Android/iOS app tests via Appium.
-      * Self-healing SEMANTIC locators: web & mobile steps locate elements by
-        meaning (fine-tuned sentence-transformers), so tests survive selector
-        churn without maintenance.
+#     DIFFERENTIATORS (beyond Playwright-only tools):
+#       * Native MOBILE: set platform="local,<tunnel-id>" and apk_id=<app id> to run
+#         real Android/iOS app tests via Appium.
+#       * Self-healing SEMANTIC locators: web & mobile steps locate elements by
+#         meaning (fine-tuned sentence-transformers), so tests survive selector
+#         churn without maintenance.
 
-    Provide either test_case_id (single case) or test_run_id (a saved run).
-    Returns an execution id; poll get_run_status with it.
-    """
-    payload: dict[str, Any] = {
-        "projectId": _project(project_id),
-        "userId": _user(user_id) or "",
-        "browserType": browser_type,
-        "platform": platform,
-        "envId": env_id,
-        "apkId": apk_id,
-        "parallel": parallel,
-    }
-    if test_case_id:
-        payload["testCaseId"] = test_case_id
-    if test_run_id:
-        payload["testRunId"] = test_run_id
-    if not test_case_id and not test_run_id:
-        raise ValueError("Provide either test_case_id or test_run_id.")
-    return await client.post_execution("/run-tests", payload)
-
-
-@mcp.tool()
-async def get_run_status(execution_id: str) -> dict[str, Any]:
-    """Check whether an execution started by run_tests is still running."""
-    return await client.get_execution(f"/status/{execution_id}")
+#     Provide either test_case_id (single case) or test_run_id (a saved run).
+#     Returns an execution id; poll get_run_status with it.
+#     """
+#     payload: dict[str, Any] = {
+#         "projectId": _project(project_id),
+#         "userId": _user(user_id) or "",
+#         "browserType": browser_type,
+#         "platform": platform,
+#         "envId": env_id,
+#         "apkId": apk_id,
+#         "parallel": parallel,
+#     }
+#     if test_case_id:
+#         payload["testCaseId"] = test_case_id
+#     if test_run_id:
+#         payload["testRunId"] = test_run_id
+#     if not test_case_id and not test_run_id:
+#         raise ValueError("Provide either test_case_id or test_run_id.")
+#     return await client.post_execution("/run-tests", payload)
 
 
-@mcp.tool()
-async def stop_tests(execution_id: str) -> dict[str, Any]:
-    """Stop an in-progress execution started by run_tests."""
-    return await client.post_execution(f"/stop-tests/{execution_id}", {})
+# @mcp.tool()
+# async def get_run_status(execution_id: str) -> dict[str, Any]:
+#     """Check whether an execution started by run_tests is still running."""
+#     return await client.get_execution(f"/status/{execution_id}")
+
+
+# @mcp.tool()
+# async def stop_tests(execution_id: str) -> dict[str, Any]:
+#     """Stop an in-progress execution started by run_tests."""
+#     return await client.post_execution(f"/stop-tests/{execution_id}", {})
 
 
 # ----------------------------------------------------------------- analysis ----
@@ -360,11 +379,11 @@ async def fetch_util_details(
     )
 
 
-def _format_test_data(entries: List[TestDataEntry]) -> list:
-    if not entries:
-        return []
-    data_dict = {td.field: {"value": td.value, "type": td.type} for td in entries}
-    return [{"data": data_dict}]
+# def _format_test_data(entries: List[TestDataEntry]) -> list:
+#     if not entries:
+#         return []
+#     data_dict = {td.field: {"value": td.value, "type": td.type} for td in entries}
+#     return [{"data": data_dict}]
 
 
 @mcp.tool()
@@ -875,7 +894,8 @@ async def add_or_remove_test_cases_from_test_run(
             filtered_test_case_ids.extend(
                 str(test_case.get("id"))
                 for test_case in test_cases
-                if test_case.get("id") and test_case.get("testType", "").lower() != 'manual'
+                if test_case.get("id")
+                and test_case.get("testType", "").lower() != "manual"
             )
 
             # Stop conditions for different response pagination styles
@@ -1162,7 +1182,9 @@ async def run_test_case(input: RunTestCaseInput) -> str:
     if resp["status_code"] == 200:
         return f"Test case with ID {input.testCaseId} execution started successfully, You can wait for the result"
     else:
-        raise Exception(f"Failed to execute test case: {resp['data']}, DON'T call wait_for_test_case_result")
+        raise Exception(
+            f"Failed to execute test case: {resp['data']}, DON'T call wait_for_test_execution_completion"
+        )
 
 
 @mcp.tool("schedule_test_run")
@@ -1269,6 +1291,7 @@ async def create_element(input: ElementCreationInput) -> ElementCreationOutput:
             f"Failed to create element: {resp['data']} with payload: {payload}"
         )
 
+
 @mcp.tool()
 async def fetch_element_details_by_id(element_id: str) -> dict[str, Any]:
     """Fetch UI element details by ID (name, selector, module, feature, testMode).
@@ -1292,6 +1315,7 @@ async def fetch_element_details_by_id(element_id: str) -> dict[str, Any]:
         "feature": el.get("feature"),
         "testMode": el.get("testMode"),
     }
+
 
 @mcp.tool("get_element_details_by_name_or_unique_key")
 async def get_element_details_by_name_or_unique_key(
@@ -1367,7 +1391,7 @@ async def wait_for_test_execution_completion(
 ) -> TestCaseResultOutput:
     """
     Wait for the completion of a test case execution by its ID. This tool will poll the backend until the test case execution completes.
-    
+
     IMPORTANT: DO NOT call this tool if the test case execution is not yet started i.e. run_test_case tool does not return a result yet.
 
     Args:
@@ -1377,6 +1401,7 @@ async def wait_for_test_execution_completion(
         TestCaseResultOutput: The result of the test case execution.
 
     """
+    temp = 0
     while True:
         resp = await client.get_backend(
             f"/testcases/v1/get-testcase-result/{input.testCaseId}",
@@ -1396,6 +1421,11 @@ async def wait_for_test_execution_completion(
             await asyncio.sleep(10)  # wait for 10 seconds before polling again
         else:
             raise Exception(f"Failed to retrieve test execution status: {resp['data']}")
+        temp += 1
+        if temp > 30:  # timeout after 5 minutes
+            raise Exception(
+                f"Timeout waiting for test case execution to complete for testCaseId: {input.testCaseId} and response is {resp['data']}"
+            )
 
 
 @mcp.tool("get_defects_with_filters")

@@ -8,6 +8,10 @@ description: Analyze a requirement document, codebase, or Swagger/OpenAPI spec a
 You are the test case author. Analyze the provided input and produce structured
 manual test cases in the standard Oniesoft template.
 
+> **IMPORTANT — Output file location:** Always write ALL output files (`test-cases-*.md`, `test-coverage.md`, `swagger-spec.json`, etc.) to the **current working directory** — the folder the user launched Claude from. Never write files into the plugin directory or the skill's own folder. Use plain filenames (no path prefix) so they land in the cwd automatically.
+
+fetch user details using `get_user_details_by_id_or_email_or_unique_key` and use it for username, author, created by fields where creating test cases, utils.
+
 ## Step 1 — Comprehensive Intake
 
 Ask the user for all inputs in a **single message**. Do not ask piecemeal.
@@ -66,13 +70,31 @@ For each mentioned util, call `fetch_util_details` with the name or unique key a
 
 Also call `fetch_util_details` for the relevant module/feature to discover any other utils already in the project that could be reused instead of recreated.
 
-## Step 2c — Parallel Extraction
+## Step 2c — Load autopilot step templates
+
+Before any extraction, call `get_autopilot_steps` with the relevant `test_mode` (`web`, `api`, or `mobile`). For full-stack projects call it twice — once for `web` and once for `api`.
+
+Use the returned `step` templates as the **only valid autopilot syntax** when writing steps in Step 3. Do not invent steps outside this list.
+
+## Step 2d — Parallel Extraction
 
 Run all applicable branches **simultaneously** (they are independent). Each branch produces inputs used in Step 3 test case generation.
 
 ---
 
 ### Branch S — Swagger / OpenAPI spec provided
+
+**If the user gives a URL** (not a local file), fetch the spec using the provided script — do NOT use Playwright or a browser:
+
+```
+python scripts/fetch_swagger.py "<url>" --output swagger-spec.json
+```
+
+If a bearer token is needed: add `--token "<token>"`.
+
+The script handles Swagger UI HTML pages, JSON specs, and YAML specs automatically. It resolves the real spec URL from the UI page and falls back to common paths (`/openapi.json`, `/api-docs`, etc.) if needed. Read `swagger-spec.json` once the command succeeds.
+
+**If the user gives a local file** (`.json` / `.yaml` / `.yml`), read it directly — no script needed.
 
 Extract directly from the spec — no recordings needed, no codebase grep needed for constraints:
 
@@ -181,41 +203,51 @@ Produces: **API Schema Map** for API test case generation. No Element Map. No Ph
 
 Only use this branch when no frontend codebase was provided (requirements doc or Swagger as the sole source for a Web feature).
 
-Parse both positive (happy path) and negative (error/validation) recordings:
+Read the full recording file(s) and use LLM analysis to extract every element — do NOT use a fixed pattern table. Every `page.*` and `expect(page.*)` call must produce an element entry. Nothing is skipped.
 
-**From the positive recording** (`.spec.ts`):
+For each line, understand the intent: what element is being interacted with, what action is performed, and what data is used. Use that understanding to assign an `el:` name, preserve the exact Playwright locator, and derive a CSS selector where possible.
 
-| Call pattern | What to extract |
-|---|---|
-| `page.goto('url')` | Page route |
-| `page.getByLabel('X').fill('Y')` | field: X, type: textbox, +Ve example: Y |
-| `page.getByLabel('X').selectOption('Y')` | field: X, type: dropdown, +Ve example: Y |
-| `page.getByRole('button', { name: 'X' }).click()` | button: X |
-| `page.getByTestId('X').fill('Y')` | testid: X, +Ve example: Y |
-| `expect(page.getByText('X')).toBeVisible()` | success verification text: X |
+**Naming convention** — `snake_case` + type suffix:
 
-**From the negative recording** (`.spec.ts`):
-- Error elements that appeared after failed submissions
-- Actual UI-visible error message text → use verbatim in -Ve test case assertions
+| Element type | Suffix | Example |
+|---|---|---|
+| Text input, textarea | `_textbox` | `el:email_textbox` |
+| Button (action) | `_button` | `el:sign_in_button` |
+| Dropdown container | `_dropdown` | `el:salutation_dropdown` |
+| Option inside a dropdown | `_option` | `el:mr_option`, `el:andhra_pradesh_option` |
+| Link / nav item | `_link` | `el:clients_link` |
+| Heading / title | `_heading` | `el:client_name_heading` |
+| Checkbox | `_checkbox` | `el:terms_checkbox` |
+| Image | `_image` | `el:logo_image` |
+| Field-level error | `_error_label` | `el:email_error_label` |
+| Form-level error | `form_error_banner` | `el:form_error_banner` |
+
+**Key rules:**
+- Multiple `.click()` then `.fill()` calls on the same locator → one element entry; use the `.fill()` value as the +Ve example
+- `.press('Tab')` or `.press('Enter')` → add as a note on the existing element; do not create a new entry
+- `getByText('X').click()` immediately after a dropdown open step → this is a dropdown option; name it `el:<snake_case_X>_option`
+- `expect(...).toContainText('X')` or `.toHaveText('X')` → extract element + record expected text X
+- Elements only visible after form submission (e.g. success heading) → extract and mark as `<!-- POST-SUBMIT -->`
+
+**From the negative recording** — apply the same full extraction, and additionally record:
+- Exact error message text visible in the UI → use verbatim in -Ve test case `check text of` assertions
 - Which field triggered which error
 
-Build a merged **Recording Map**:
+**Build a merged Recording Map** — one entry per unique element across both recordings:
+
 ```
 Recording Map:
-  el:email_textbox     → playwright: page.getByLabel('Email')                | +Ve: admin@example.com
-  el:login_button      → playwright: page.getByRole('button',{name:'Sign In'})
-  el:email_error_label → playwright: page.getByText('Email is required')     | error: "Email is required"
-  el:form_error_banner → playwright: page.locator('.form-error')
+  el:email_textbox           → playwright: page.getByRole('textbox', {name:'email@example.com'}) | css: [placeholder="email@example.com"] | +Ve: testuser@yopmail.com
+  el:sign_in_button          → playwright: page.getByRole('button', {name:'Sign In'})             | css: button:has-text("Sign In")
+  el:salutation_dropdown     → playwright: page.getByRole('button', {name:'Select salutation'})   | css: button:has-text("Select salutation")
+  el:mr_option               → playwright: page.getByText('Mr.')                                  | css: :text("Mr.")
+  el:state_dropdown          → playwright: page.getByRole('button', {name:'Select state',exact:true}) | css: button:text-is("Select state")
+  el:andhra_pradesh_option   → playwright: page.getByText('Andhra Pradesh')                       | css: :text("Andhra Pradesh")
+  el:client_name_heading     → playwright: page.locator('h1')                                     | css: h1 | expected text: "Test User" <!-- POST-SUBMIT -->
+  el:email_error_label       → playwright: page.getByText('Email is required')                    | error: "Email is required"
 ```
 
-`el:` naming convention: derive from label or testId using `snake_case` + `_type` suffix:
-- `"Email"` → `el:email_textbox`
-- `"Full Name"` → `el:full_name_textbox`
-- `"Sign In"` (button) → `el:login_button`
-- `data-testid="user-role-select"` → `el:user_role_dropdown`
-- Error element: field name + `_error_label`; form-level: `el:form_error_banner`
-
-Write as `<!-- RECORDING-MAP -->` block in each generated `test-cases-*.md`. Phase 2 reads this — no browser launch.
+Write as `<!-- RECORDING-MAP -->` block at the top of each generated `test-cases-*.md`. Phase 2 reads this — no browser launch needed.
 
 ---
 
@@ -421,9 +453,67 @@ call get "/api/users/$$created_user_id"
 check status code is 200
 ```
 
+**Variable store/access rule — CRITICAL (applies to web, mobile, and API):**
+
+Variables are stored using a plain name, but **always accessed with `$$` prefix**. No exceptions, in any test mode.
+
+```
+✅ CORRECT — store with plain name, access with $$:
+
+# API
+store the "$.csrf_token" in "csrf_token"
+with headers {"x-csrf-token": "$$csrf_token"}
+
+store the "$.id" in "user_id"
+call get "/api/users/$$user_id"
+with body {"owner": "$$user_id", "name": "<name>"}
+
+# Web / Mobile
+store the inner text of "el:order_id_label" in "order_id"
+check variable "order_id" is equal to "$$order_id"
+navigate to "/orders/$$order_id"
+
+❌ WRONG — accessing variable without $$:
+with headers {"x-csrf-token": "csrf_token"}
+call get "/api/users/user_id"
+check variable "order_id" is equal to "order_id"
+```
+
+Every place a stored variable is **used** — in `with body`, `with headers`, `with query parameters`, API URLs, `check the expression`, `check variable`, `navigate to`, or any step that references the value — it must be prefixed with `$$`. The plain name appears only in the `store ... in "name"` step itself.
+
+---
+
+**Dropdown / select rule — CRITICAL:**
+
+There are two types of dropdowns and they need different steps:
+
+**Native `<select>` tag** → use `select option` (single step):
+```
+select option "Admin" in "el:role_dropdown"
+```
+
+**Custom dropdown (built with `<button>`, `<div>`, `<li>` etc.)** → two click steps, but BOTH must have `el:` prefix. The option click must also be an element:
+```
+✅ CORRECT:
+click on "el:salutation_dropdown"
+click on "el:mr_option"
+
+click on "el:state_dropdown"
+click on "el:andhra_pradesh_option"
+
+❌ WRONG — bare text without el: means the element is never created by the backend:
+click on "el:salutation_dropdown"
+click on "Mr."
+```
+
+How to tell which type: if the Element Info table shows `getByRole('button')` or `getByRole('combobox')` or a CSS selector with `button`/`div`/`li` for the dropdown — it is a custom dropdown, use two `click on "el:..."` steps. If the CSS selector shows `select` tag — use `select option`.
+
+**Every value inside `click on "..."` MUST have `el:` prefix** — no exceptions. If it is an option inside a custom dropdown, give it an `el:` name (e.g. `el:mr_option`, `el:andhra_pradesh_option`) and add it to the Element Info table.
+
 **Element name rules:**
 - Use `el:` prefix in steps: `el:email_textbox`, `el:login_button`
-- Include element type in name: `textbox`, `button`, `link`, `dropdown`, `checkbox`, `label`
+- Include element type in name: `textbox`, `button`, `link`, `dropdown`, `checkbox`, `label`, `option`
+- Dropdown options: name as `el:<value>_option` e.g. `el:mr_option`, `el:passport_option`, `el:andhra_pradesh_option`
 - Error message containers: `el:fieldname_error_label` (field-level), `el:form_error_banner` (form-level)
 - Use `<placeholder>` for test data that varies: `"<email>"`, `"<password>"`
 - Use literal strings for fixed values: `"Admin"`, `"https://..."`, `200`
