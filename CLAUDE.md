@@ -10,7 +10,7 @@ This is a Claude Code plugin (MCP server) that integrates Claude with the Onieso
 
 ## Project Connection Details
 
-At the start of each session, read `.mcp.json` to understand the MCP server configuration and the env var mappings (project ID, user ID, API URLs, API key). Use those values for any MCP tool calls that require `projectId`, `userId`, or related fields.
+At the start of each session, read `.mcp.json` from the **current working directory** (the project folder the user launched Claude from — not the plugin directory) to get the real values for project ID, user ID, company ID, API URLs, and API key. Use those values for any MCP tool calls that require `projectId`, `userId`, `companyId`, or related fields.
 
 ## Tool Scope Rules
 
@@ -18,7 +18,7 @@ At the start of each session, read `.mcp.json` to understand the MCP server conf
 
 ## Agent Delegation Rules
 
-When the user asks to analyze an Oniesoft test run (why it failed, compare runs, interpret a stack trace), always delegate to the `oniesoft-test-platform:failure-analyst` subagent via the Agent tool instead of calling MCP tools inline in the main conversation.
+When the user asks to analyze an Oniesoft test run (why it failed, compare runs, interpret a stack trace), always delegate to the `auto-pilot:failure-analyst` subagent via the Agent tool instead of calling MCP tools inline in the main conversation.
 
 ## Three-Phase Test Case Workflow
 

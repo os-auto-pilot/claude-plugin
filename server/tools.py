@@ -80,7 +80,7 @@ def _user(user_id: uuid.UUID | None) -> str | None:
 
 
 @mcp.tool()
-def get_autopilot_steps(test_mode: str) -> list[dict]:
+async def get_autopilot_steps(test_mode: str) -> list[dict]:
     """Return the complete list of supported autopilot step templates for a given test mode.
 
     ⚠️  SKILL-SCOPED TOOL — only call this from within the /analyze-requirements skill,
@@ -96,7 +96,11 @@ def get_autopilot_steps(test_mode: str) -> list[dict]:
         the "step" templates returned here.
     """
     payload = {"test_mode": test_mode}
-    return client.get_platform("/api/test-steps", params=payload)
+    resp = await client.get_platform("/api/test-steps", params=payload)
+    if resp["status_code"] != 200:
+        raise ValueError(f"Failed to fetch autopilot steps: {resp['data']}")
+    return resp["data"]["test_steps"] if "test_steps" in resp["data"] else []
+
 
 @mcp.tool()
 async def save_claude_test_cases(
@@ -120,7 +124,7 @@ async def save_claude_test_cases(
         "test_mode": request.test_mode,
         "project_id": _project(request.project_id),
         "user_id": uid,
-        "created_by": request.created_by or "claude-code",
+        "created_by": request.created_by,
         "browser_type": request.browser_type,
         "platform": request.platform,
         "env_id": request.env_id,
@@ -405,7 +409,7 @@ async def save_claude_utils(request: CreateUtilFromClaudeRequest) -> dict[str, A
         "utils": [u.model_dump(mode="json") for u in request.utils],
         "module": request.module,
         "project_id": _project(request.projectId),
-        "userName": request.userName or "claude-code",
+        "userName": request.userName,
         "user_id": request.user_id,
         "token": request.token,
     }
@@ -1293,28 +1297,38 @@ async def create_element(input: ElementCreationInput) -> ElementCreationOutput:
 
 
 @mcp.tool()
-async def fetch_element_details_by_id(element_id: str) -> dict[str, Any]:
-    """Fetch UI element details by ID (name, selector, module, feature, testMode).
+async def fetch_element_details_by_id(element_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch UI element details for one or more element IDs in parallel.
 
-    Call this when a failure trace references an element ID to understand which
-    UI element was involved in the failure.
+    Pass a list of element IDs (UUIDs). All requests are made concurrently.
+    Call this when a failure trace references element IDs to resolve their names
+    and selectors. Returns one result object per ID; errors are returned inline
+    rather than raising so that partial results are still usable.
     """
-    resp = await client.get_backend(f"/elements/v1/{element_id}")
-    if resp["status_code"] != 200:
-        if resp["status_code"] == 500 or "JWT" in str(resp["data"]):
+
+    async def _fetch_one(element_id: str) -> dict[str, Any]:
+        resp = await client.get_backend(f"/elements/v1/{element_id}")
+        if resp["status_code"] != 200:
+            if resp["status_code"] == 500 or "JWT" in str(resp["data"]):
+                return {
+                    "id": element_id,
+                    "error": f"Cannot fetch element {element_id}: invalid token or server error",
+                }
             return {
-                "error": f"Cannot fetch element {element_id}: invalid token or server error"
+                "id": element_id,
+                "error": f"Failed to fetch element details: {resp['data']}",
             }
-        raise ValueError(f"Failed to fetch element details: {resp['data']}")
-    el = resp["data"]
-    return {
-        "id": el.get("id"),
-        "name": el.get("name"),
-        "selector": el.get("selector"),
-        "module": el.get("module"),
-        "feature": el.get("feature"),
-        "testMode": el.get("testMode"),
-    }
+        el = resp["data"]
+        return {
+            "id": el.get("id"),
+            "name": el.get("name"),
+            "selector": el.get("selector"),
+            "module": el.get("module"),
+            "feature": el.get("feature"),
+            "testMode": el.get("testMode"),
+        }
+
+    return list(await asyncio.gather(*[_fetch_one(eid) for eid in element_ids]))
 
 
 @mcp.tool("get_element_details_by_name_or_unique_key")
@@ -1410,7 +1424,11 @@ async def wait_for_test_execution_completion(
             data = resp["data"]
             if data:
                 status = data[-1].get("status")
-                logs = data[-1].get("traceStack", "")
+                if len(data) > 1 and status == "In Progress":
+                    status = data[0].get("status")
+                    logs = data[0].get("traceStack", "")
+                else:
+                    logs = data[-1].get("traceStack", "")
                 if status in ("Pass", "Fail", "Abort"):
                     return TestCaseResultOutput(
                         testCaseId=input.testCaseId,

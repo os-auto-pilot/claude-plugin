@@ -1053,7 +1053,7 @@ class CreateTestCaseFromClaudeRequest(BaseModel):
         None, description="Project ID for the test cases"
     )
     user_id: Optional[uuid.UUID] = Field(None, description="User ID for the test cases")
-    created_by: str = Field(..., description="Name of the user creating the test cases")
+    created_by: str = Field(..., description="Name of the user creating the test cases, get from get_user_details_by_id_or_email_or_unique_key if not have")
     browser_type: Literal["Chrome", "Firefox", "Safari", "Edge"] = Field(
         default="Chrome", description="Browser type for the test cases, e.g., 'Chrome'"
     )

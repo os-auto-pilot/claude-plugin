@@ -12,23 +12,74 @@ manual test cases in the standard Oniesoft template.
 
 fetch user details using `get_user_details_by_id_or_email_or_unique_key` and use it for username, author, created by fields where creating test cases, utils.
 
-## Step 1 — Comprehensive Intake
+## Step 1 — Intake: requirement doc / Swagger / codebase
 
-Ask the user for all inputs in a **single message**. Do not ask piecemeal.
+Ask the user for the **primary source** only in a single message — do not ask for recordings yet:
 
-> **To generate accurate test cases, please share what you have (provide at least one):**
+> **Please share your primary source (provide at least one):**
 >
 > - Requirements / feature document
-> - Codebase (path or relevant files)
-> - Swagger / OpenAPI spec
-> - Playwright recording files (`.spec.ts` / `.spec.js`) — **only needed if no codebase is available**
+> - Swagger / OpenAPI spec URL or file
+> - Codebase path (frontend, backend, or full-stack)
 > - HAR file — optional, adds backend error message accuracy
 
-Do **not** ask for Playwright recordings if:
-- A frontend or full-stack codebase is provided (codebase already has element identifiers and validation schemas)
-- A Swagger/OpenAPI spec is the primary source (spec already has field constraints and error schemas)
+After the user provides this, proceed to **Step 1b**.
 
-After the user responds, proceed to **Step 1b** before doing anything else.
+## Step 1b — Detect Codebase Type (if codebase provided)
+
+If a codebase was provided, classify it:
+
+| Signals | Classification | Test type |
+|---|---|---|
+| `.tsx`, `.jsx`, `.vue`, `.svelte`, `components/`, `pages/`, HTML templates | **Frontend** | Web |
+| `controllers/`, `routes/`, `views.py`, `serializers.py`, `schema.prisma`, `models/`, REST/GraphQL handlers | **Backend** | API |
+| Both present | **Full-stack** | Web + API |
+
+- Frontend / Full-stack codebase → do **not** ask for recordings (codebase already has element identifiers)
+- Backend codebase → API test cases only, skip Phase 2 entirely
+
+If codebase is provided, proceed directly to **Step 2**.
+
+## Step 1c — Identify flows and collect recordings
+
+**MANDATORY — do not skip, do not proceed to Step 2 until this step is complete.**
+
+Do the following **before generating any test cases**, regardless of what was provided in Step 1:
+
+**Exception:** skip this step only if a frontend or full-stack codebase was provided (codebase already contains element identifiers — recordings add no value on top of that).
+
+If no codebase was provided, do the following:
+
+**1. Scan the requirement doc / Swagger to identify all distinct user flows.** A flow is a self-contained user journey: Create, Update, Delete, Search, Login, Export, etc.
+
+**2. Present the flows found and ask for recordings per flow:**
+
+> I found these flows in the requirements:
+> - **Create [Entity]** — add a new record
+> - **Update [Entity]** — edit an existing record
+> - **Delete [Entity]** — remove a record
+> - *(list all flows found)*
+>
+> For each flow, Playwright recordings (positive + negative) dramatically improve test case quality and count — they provide exact element names, real validation messages, and exact test data.
+>
+> Please share what you have for each flow:
+> - Positive recording (`.spec.ts` / `.spec.js`) — happy path
+> - Negative recording — validation/error scenarios
+> - If you don't have a recording for a flow, I'll generate test cases from the requirements alone for that flow (fewer cases, inferred constraints)
+
+**3. STOP. Send the message above and wait for the user's response. Do NOT generate any test cases yet.** The user may provide:
+- Recordings for all flows → best coverage
+- Recordings for some flows → full coverage for recorded flows, inferred for the rest
+- No recordings → all flows generated from requirements only
+
+**4. Map what was provided:**
+
+| Flow | Positive recording | Negative recording | Source |
+|---|---|---|---|
+| Create Client | `client_creation_positive.ts` | `client_creation_negative.ts` | Recording |
+| Delete Client | — | — | Requirements only |
+
+Proceed to **Step 2** with this map.
 
 ## Step 1b — Detect Codebase Type (if codebase provided)
 
@@ -377,14 +428,14 @@ Cover all of:
 - -Ve test cases: missing required fields (→ 400), wrong types, out-of-range values, unauthorized (→ 401/403), not found (→ 404)
 - No Element Info section needed for API test cases
 
-**Numbering:** TC-001, TC-002, … per file. Reset per file.
+**Naming:** Use a concise descriptive name only — do NOT prefix with TC-001 or any ID/key. The platform assigns IDs automatically.
 
 ---
 
 ## Test Case Template (use exactly, every time)
 
 ```markdown
-## TC-001: [Concise test case name]
+## [Concise test case name]
 **Module:** [Module name]
 **Feature:** [Feature name]
 **Type:** Functional +Ve

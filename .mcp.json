@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "oniesoft": {
+    "auto-pilot": {
       "command": "python",
       "args": ["${CLAUDE_PLUGIN_ROOT}/server/launch.py"],
       "env": {

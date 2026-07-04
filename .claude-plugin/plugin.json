@@ -1,13 +1,22 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "oniesoft-test-platform",
-  "displayName": "Oniesoft Test Platform",
+  "name": "auto-pilot",
+  "displayName": "auto-pilot by Oniesoft",
   "version": "0.1.0",
   "description": "Drive the Oniesoft test platform from Claude Code: generate web/API/mobile test cases, run them (native mobile via Appium + self-healing semantic locators), and analyze failures.",
   "author": {
     "name": "Oniesoft"
   },
-  "keywords": ["testing", "test-automation", "api-testing", "mobile-testing", "qa"],
+  "keywords": [
+    "testing",
+    "test-automation",
+    "api-testing",
+    "mobile-testing",
+    "qa",
+    "analyze-requirements",
+    "generate-test-cases",
+    "analyze test results"
+  ],
   "userConfig": {
     "platform_api_url": {
       "type": "string",

@@ -5,7 +5,7 @@
   },
   "plugins": [
     {
-      "name": "oniesoft-test-platform",
+      "name": "auto-pilot",
       "source": "./",
       "description": "Drive the Oniesoft test platform from Claude Code: generate web/API/mobile test cases, run them (native mobile via Appium + self-healing semantic locators), and analyze failures."
     }

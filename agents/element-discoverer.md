@@ -126,25 +126,51 @@ For each page in the queue:
 
 ---
 
-## Step 4 — Fill all Element Info tables (parallel)
+## Step 4 — Fill Element Info tables AND write Autopilot Steps (parallel)
 
-Spawn one subagent per markdown file to fill its Element Info tables from the registry. Each file is independent — subagents run in parallel.
+Spawn one subagent per markdown file. Each file is independent — subagents run in parallel.
 
 **Within each file, process UTIL-NNN sections first, then TC-NNN sections.**
 
-For each Element Info table row, look up the element name in the registry and fill in the columns:
+### 4A — Fill Element Info tables
+
+For each Element Info table row, look up the element name in the registry and fill in:
 
 | Element | Playwright Locator | CSS Selector | XPath |
 |---------|--------------------|--------------|-------|
 | email_textbox | `page.getByLabel('Email')` | `input[name="email"]` | `//input[@name='email']` |
 
-Fill only the columns for which data is available:
-- `CODEBASE-SOURCED` entries: CSS and XPath (Playwright column may be `—`)
-- `RECORDING-SOURCED` entries: Playwright locator (CSS/XPath may be `—` if not in the recording)
-- `RESOLVED` entries: whichever locator types were found in the browser snapshot
-- `NOT-FOUND` entries: all three columns get `— (not found)`
+- `CODEBASE-SOURCED`: fill CSS and XPath (Playwright column may be `—`)
+- `RECORDING-SOURCED`: fill Playwright locator (CSS/XPath may be `—` if not in recording)
+- `RESOLVED` via browser: fill whichever locator types were found
+- `NOT-FOUND`: all three columns get `— (not found)`
 
-Also update **Test Steps** if the actual flow differs from Phase 1 (e.g. an extra redirect, a modal, a loading state that wasn't anticipated). Only update steps for elements discovered via browser (Step 3) — do not alter steps for codebase- or recording-sourced elements.
+### 4B — Write Autopilot Steps section
+
+After filling the Element Info table for each TC-NNN and UTIL-NNN section, write or overwrite its `### Autopilot Steps` block using the resolved element locators.
+
+Rules:
+- Use the autopilot step format: `enter "<value>" in "el:element_name"`, `click on "el:element_name"`, etc.
+- Reference elements by their `el:` name — the backend substitutes the real UUID at push time
+- For `NOT-FOUND` elements, still write the step using the `el:` name and add a comment: `# ⚠ element not resolved — verify locator before running`
+- For elements discovered only via browser (Step 3), use the CSS selector as a note in the Element Info table; the `el:` name is used in steps
+- Update **Test Steps** table as well if the actual flow discovered via browser differs from Phase 1 (extra redirect, modal, loading state)
+- Do not alter steps for elements that were codebase- or recording-sourced unless a real discrepancy was found
+
+Example output for a TC section:
+
+```markdown
+### Autopilot Steps
+
+execute util "5a1030fe-e0e3-4af0-9afb-d77501b163fa"
+click on "el:salutation_dropdown"
+click on "el:mr_option"
+enter "Test" in "el:first_name_textbox"
+enter "User" in "el:last_name_textbox"
+click on "el:create_client_button"
+check text of "el:client_name_heading" is "Test User"
+check element "el:overview_button" is visible in the page
+```
 
 ---
 
