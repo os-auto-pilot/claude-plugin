@@ -24,8 +24,8 @@ mcp = FastMCP("auto-pilot plugin")
 
 
 _MISSING_ID_HELP = (
-    "No {field} given and no default configured. Read the `.mcp.json` file in the "
-    "project's root directory (the folder you're working in, not the plugin "
+    "No {field} given and no default configured. Read the `.config.json` file in "
+    "the project's root directory (the folder you're working in, not the plugin "
     "directory) and pass its `{field}` value explicitly as the `{field}` argument "
     "to this tool. Do not search `.credentials.json` or `settings.json` for this — "
     "those don't contain it."
