@@ -23,19 +23,29 @@ from . import client
 mcp = FastMCP("auto-pilot plugin")
 
 
+_MISSING_ID_HELP = (
+    "No {field} given and no default configured. Read the `.mcp.json` file in the "
+    "project's root directory (the folder you're working in, not the plugin "
+    "directory) and pass its `{field}` value explicitly as the `{field}` argument "
+    "to this tool. Do not search `.credentials.json` or `settings.json` for this — "
+    "those don't contain it."
+)
+
+
 def _project(project_id: uuid.UUID | None) -> str:
-    pid = project_id or uuid.UUID(client.DEFAULT_PROJECT_ID)
-    if not pid:
-        raise ValueError(
-            "No project_id given and no default configured. Pass project_id or set "
-            "default_project_id in the plugin config."
-        )
-    return str(pid)
+    if project_id:
+        return str(project_id)
+    if client.DEFAULT_PROJECT_ID:
+        return str(uuid.UUID(client.DEFAULT_PROJECT_ID))
+    raise ValueError(_MISSING_ID_HELP.format(field="projectId"))
 
 
 def _user(user_id: uuid.UUID | None) -> str | None:
-    uid = user_id or uuid.UUID(client.DEFAULT_USER_ID)
-    return str(uid) if uid else None
+    if user_id:
+        return str(user_id)
+    if client.DEFAULT_USER_ID:
+        return str(uuid.UUID(client.DEFAULT_USER_ID))
+    return None
 
 
 # --------------------------------------------------------------- generation ----
@@ -353,10 +363,7 @@ async def fetch_util_details(
     """
     project_id = input.projectId or client.DEFAULT_PROJECT_ID
     if not project_id:
-        raise ValueError(
-            "No projectId given and no default configured. Pass projectId or set "
-            "default_project_id in the plugin config."
-        )
+        raise ValueError(_MISSING_ID_HELP.format(field="projectId"))
     params: dict[str, Any] = {
         "query": input.query or "",
         "testMode": input.testMode or "",

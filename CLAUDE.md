@@ -10,7 +10,25 @@ This is a Claude Code plugin (MCP server) that integrates Claude with the Onieso
 
 ## Project Connection Details
 
-At the start of each session, read `.mcp.json` from the **current working directory** (the project folder the user launched Claude from — not the plugin directory) to get the real values for project ID, user ID, company ID, API URLs, and API key. Use those values for any MCP tool calls that require `projectId`, `userId`, `companyId`, or related fields.
+Company ID, user ID, project ID, and the three API URLs are per-project settings, stored in a `.config.json` file in the project folder (the directory you're working in — read it directly, the same way you read any other file in the repo).
+
+**At the start of each session, read `.configs.json` from the project root and keep `companyId`/`projectId`/`userId` in mind for the rest of the conversation.** Pass them explicitly as `projectId` / `companyId` / `userId` (or `registerId` where a tool asks for the user's ID) on every tool call that accepts them — do not assume they are auto-injected. (`server/launch.py` also tries to inject them as environment variables at server startup as a bonus fallback, but this depends on the MCP host launching the server with the project directory as its working directory, which is not reliable — don't depend on it.)
+
+The **API key** is the only credential that stays in the global plugin config (set once in Claude Code settings), sourced from `~/.claude/.credentials.json` and injected as `PLATFORM_API_KEY`. This one *is* reliably injected — no need to read or pass it.
+
+If `.config.json` is missing a value you need, or a tool call fails with "No project_id given and no default configured" (or similar for company/user ID), ask the user for the missing value directly — never search `.credentials.json`, `settings.json`, or other config files to hunt for identifiers like emails or registerIds. Those files hold secrets and are out of scope for resolving a missing project/company/user ID.
+
+**Project `.config.json` format**:
+```json
+{
+  "companyId": "43e4f7c3-1a17-4627-8d95-49fd59076851",
+  "projectId": "248af507-c75c-4590-95b8-4145891df8d0",
+  "userId": "15eb541f-2dbe-403f-8191-9e1ad15fc0ef",
+  "platformApiUrl": "http://localhost:8000",
+  "executionApiUrl": "http://localhost:3232",
+  "backendUrl": "http://localhost:8088"
+}
+```
 
 ## Tool Scope Rules
 

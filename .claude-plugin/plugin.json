@@ -18,45 +18,12 @@
     "analyze test results"
   ],
   "userConfig": {
-    "platform_api_url": {
-      "type": "string",
-      "title": "Platform API URL",
-      "description": "Base URL of the agentic_ai_be service (test-case generation & analysis).",
-      "default": "http://localhost:8000"
-    },
-    "execution_api_url": {
-      "type": "string",
-      "title": "Execution API URL",
-      "description": "Base URL of the python_tool execution engine (runs test cases / test runs).",
-      "default": "http://localhost:3232"
-    },
     "platform_api_key": {
       "type": "string",
       "title": "API key",
       "description": "Your personal Oniesoft API key. Generate one in the platform (Users > API Keys). Sent as the x-api-key header.",
       "sensitive": true,
       "required": true
-    },
-    "default_project_id": {
-      "type": "string",
-      "title": "Default project ID",
-      "description": "Project UUID used when a tool call doesn't specify one."
-    },
-    "default_company_id": {
-      "type": "string",
-      "title": "Default company ID",
-      "description": "Company UUID used when a tool call doesn't specify one."
-    },
-    "default_user_id": {
-      "type": "string",
-      "title": "Default user ID",
-      "description": "User UUID used when a tool call doesn't specify one (e.g. for runs)."
-    },
-    "backend_url": {
-      "type": "string",
-      "title": "Backend URL",
-      "description": "Base URL of the backend service (passed as BACKEND_URL to the MCP server).",
-      "default": "http://localhost:8088"
     }
   }
 }
