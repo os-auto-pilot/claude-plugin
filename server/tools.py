@@ -1026,6 +1026,7 @@ async def get_test_cases_with_filters_in_a_project(
 ):
     """
     Get list of test cases in a project by applying various filters.
+    Filters: nameOrUniqueKey, active, deleted, testMode (Web/API/Mobile), severity (Minor/Major/Blocker/Critical), testType, moduleName, featureName, author
     active and deleted filters in input are used to include/exclude active and deleted test cases respectively, active flag false means active, deleted flag false means not deleted.
     """
 
