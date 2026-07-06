@@ -976,7 +976,7 @@ async def get_environments_assigned_to_user(
         List[GetEnvironmentsAssignedToUserOutput]: Output containing the list of environments assigned to the specified user.
     """
     resp = await client.get_backend(
-        f"/servers/v1/servers-by-user/{input.registerId}/{_project(input.projectId)}/true",
+        f"/servers/v1/servers-by-user/{_user(input.registerId)}/{_project(input.projectId)}/true",
     )
     if resp["status_code"] == 200:
         environments = resp["data"]
@@ -1003,7 +1003,7 @@ async def get_projects_assigned_to_user(
         List[GetProjectsAssignedToUserOutput]: Output containing the list of projects assigned to the specified user.
     """
     resp = await client.get_backend(
-        f"/projectusers/v1/getassignprojects/{input.registerId}",
+        f"/projectusers/v1/getassignprojects/{_user(input.registerId)}",
     )
     print(
         f"Response from get projects assigned to user API: {resp['status_code']} - {resp['data']}"
@@ -1030,8 +1030,8 @@ async def get_test_cases_with_filters_in_a_project(
     """
 
     base_params = {
-        "id": str(input.id),
-        "query": input.query,
+        "id": _project(input.id),
+        "query": input.nameOrUniqueKey,
         "testMode": input.testMode,
         "featureName": input.featureName,
         "moduleName": input.moduleName,

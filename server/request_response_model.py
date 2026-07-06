@@ -607,12 +607,12 @@ class GetProjectsAssignedToUserOutput(BaseModel):
 class GetTestCasesWithFiltersInAProjectInput(BaseModel):
     """Model representing the input for retrieving test cases with filters in a project"""
 
-    id: uuid.UUID = Field(
-        ...,
+    id: Optional[uuid.UUID] = Field(
+        None,
         description="ID of the project for which to retrieve test cases with filters",
     )
-    query: Optional[str] = Field(
-        None, description="Query string to search test cases by name or unique key"
+    nameOrUniqueKey: Optional[str] = Field(
+        None, description="name or unique key of the test case"
     )
     active: Optional[bool] = Field(
         False, description="Filter test cases by active status, false means active"
@@ -640,7 +640,8 @@ class GetTestCasesWithFiltersInAProjectInput(BaseModel):
         description="Name of the module to filter test cases, can use combination of module names in comma separated format (e.g. Module1,Module2) to filter test cases belonging to any of the provided modules",
     )
     featureName: Optional[str] = Field(
-        None, description="Name of the feature to filter test cases, can use combination of feature names in comma separated format (e.g. Feature1,Feature2) to filter test cases belonging to any of the provided features"
+        None,
+        description="Name of the feature to filter test cases, can use combination of feature names in comma separated format (e.g. Feature1,Feature2) to filter test cases belonging to any of the provided features",
     )
 
     @field_validator("testMode", mode="before")
@@ -1053,7 +1054,10 @@ class CreateTestCaseFromClaudeRequest(BaseModel):
         None, description="Project ID for the test cases"
     )
     user_id: Optional[uuid.UUID] = Field(None, description="User ID for the test cases")
-    created_by: str = Field(..., description="Name of the user creating the test cases, get from get_user_details_by_id_or_email_or_unique_key if not have")
+    created_by: str = Field(
+        ...,
+        description="Name of the user creating the test cases, get from get_user_details_by_id_or_email_or_unique_key if not have",
+    )
     browser_type: Literal["Chrome", "Firefox", "Safari", "Edge"] = Field(
         default="Chrome", description="Browser type for the test cases, e.g., 'Chrome'"
     )
@@ -1158,7 +1162,9 @@ class GetDefectOrTaskDetailsOutput(BaseModel):
 
     id: uuid.UUID = Field(..., description="ID of the defect or task")
     title: str = Field(..., description="Title of the defect or task")
-    description: str | None = Field(None, description="Description of the defect or task")
+    description: str | None = Field(
+        None, description="Description of the defect or task"
+    )
     priority: Optional[Literal["Minor", "Major", "Blocker", "Critical"]] = Field(
         None, description="Priority of the defect or task"
     )
