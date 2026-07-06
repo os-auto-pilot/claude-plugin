@@ -605,7 +605,9 @@ class GetProjectsAssignedToUserOutput(BaseModel):
 
 
 class GetTestCasesWithFiltersInAProjectInput(BaseModel):
-    """Model representing the input for retrieving test cases with filters in a project"""
+    """Model representing the input for retrieving test cases with filters in a project
+    Filters: nameOrUniqueKey, active, deleted, testMode (Web/API/Mobile), severity (Minor/Major/Blocker/Critical), testType, moduleName, featureName, author
+    """
 
     id: Optional[uuid.UUID] = Field(
         None,
