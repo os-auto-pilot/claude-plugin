@@ -172,6 +172,26 @@ def main() -> None:
     _inject_project_config(env, project_dir)
     _inject_api_key(env)
 
+    # TEMP DEBUG — remove once the CLI-vs-Desktop cwd/env discrepancy is confirmed.
+    try:
+        import datetime
+
+        debug_log = os.path.join(DATA_DIR, "launch_debug.log")
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(debug_log, "a", encoding="utf-8") as fh:
+            fh.write(
+                f"{datetime.datetime.now()} pid={os.getpid()} "
+                f"cwd_before_chdir={project_dir!r} "
+                f"CLAUDE_PROJECT_DIR={os.environ.get('CLAUDE_PROJECT_DIR')!r} "
+                f"project_config_json_found={os.path.exists(os.path.join(project_dir, 'config.json'))} "
+                f"PLATFORM_PROJECT_ID={env.get('PLATFORM_PROJECT_ID') or '<empty/unset>'} "
+                f"PLATFORM_COMPANY_ID={env.get('PLATFORM_COMPANY_ID') or '<empty/unset>'} "
+                f"PLATFORM_API_KEY={env.get('PLATFORM_API_KEY') or '<empty/unset>'}\n"
+                f"env_keys={list(env.items())}\n"
+            )
+    except Exception:
+        pass
+
     result = subprocess.run([py, "-m", "server"], env=env, cwd=PLUGIN_ROOT)
     sys.exit(result.returncode)
 

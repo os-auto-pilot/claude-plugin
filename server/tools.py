@@ -1031,7 +1031,7 @@ async def get_test_cases_with_filters_in_a_project(
     """
 
     base_params = {
-        "id": _project(None),
+        "id": _project(input.projectId),
         "query": input.nameOrUniqueKey,
         "testMode": input.testMode,
         "featureName": input.featureName,

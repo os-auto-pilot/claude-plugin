@@ -611,6 +611,10 @@ class GetTestCasesWithFiltersInAProjectInput(BaseModel):
     nameOrUniqueKey: Optional[str] = Field(
         None, description="name or unique key of the test case"
     )
+    projectId: Optional[uuid.UUID] = Field(
+        default=None,
+        description="ID of the project to search test cases in; falls back to the configured default when omitted",
+    )
     active: Optional[bool] = Field(
         False, description="Filter test cases by active status, false means active"
     )
