@@ -175,7 +175,7 @@ class GetUserDetailsByIdOrEmailOrUniqueKeyInput(BaseModel):
         ...,
         description="ID, email, or unique key of the user to retrieve details for",
     )
-    cmpId: uuid.UUID = Field(
+    companyId: uuid.UUID = Field(
         ..., description="ID of the company for which to retrieve user details"
     )
 
@@ -524,10 +524,6 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
 class GetTestCasesUUIDByUniqueKeyInput(BaseModel):
     """Model representing the input for retrieving test case UUIDs by unique keys in a project"""
 
-    id: uuid.UUID = Field(
-        ...,
-        description="ID of the project for which to retrieve test case UUIDs",
-    )
     uniqueKeys: list[str] = Field(
         ...,
         description="List of test case unique keys to resolve into UUIDs",
@@ -539,12 +535,16 @@ class GetTestCasesUUIDByUniqueKeyInput(BaseModel):
     deleted: Optional[bool] = Field(
         False, description="Filter test cases by deleted status, true means deleted"
     )
+    projectId: uuid.UUID = Field(
+        ...,
+        description="ID of the project for which to retrieve assigned environments for the user",
+    )
 
 
 class GetEnvironmentsAssignedToUserInput(BaseModel):
     """Model representing the input for retrieving environments assigned to a user"""
 
-    registerId: uuid.UUID = Field(
+    userID: uuid.UUID = Field(
         ...,
         description="ID or userId of the user to retrieve assigned environments for",
     )
@@ -580,7 +580,7 @@ class GetEnvironmentsAssignedToUserOutput(BaseModel):
 class GetProjectsAssignedToUserInput(BaseModel):
     """Model representing the input for retrieving projects assigned to a user"""
 
-    registerId: uuid.UUID = Field(
+    userID: uuid.UUID = Field(
         ..., description="ID or userId of the user to retrieve assigned projects for"
     )
 
@@ -605,9 +605,8 @@ class GetProjectsAssignedToUserOutput(BaseModel):
 
 
 class GetTestCasesWithFiltersInAProjectInput(BaseModel):
-    """Model representing the input for retrieving test cases with filters in a project
-    """
-    
+    """Model representing the input for retrieving test cases with filters in a project"""
+
     nameOrUniqueKey: Optional[str] = Field(
         None, description="name or unique key of the test case"
     )
@@ -1355,10 +1354,10 @@ class CreateUtilFromClaudeRequest(BaseModel):
         None,
         description="Project ID for the utils. Falls back to plugin default when omitted.",
     )
-    userName: str = Field(
-        default="claude-code", description="Name of the user creating the utils"
+    userName: str = Field(..., description="Name of the user creating the utils")
+    user_id: Optional[uuid.UUID] = Field(
+        None, description="ID of the user creating the utils"
     )
-    user_id: str = Field("", description="ID of the user creating the utils")
     token: Optional[str] = Field(None, description="Authentication token for the user")
 
 

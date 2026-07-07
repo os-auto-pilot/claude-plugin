@@ -12,6 +12,7 @@ existing convention), read once from the environment that the plugin's
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -24,6 +25,38 @@ API_KEY = os.environ.get("PLATFORM_API_KEY", "")
 DEFAULT_PROJECT_ID = os.environ.get("PLATFORM_PROJECT_ID", "") or None
 DEFAULT_USER_ID = os.environ.get("PLATFORM_USER_ID", "") or None
 DEFAULT_COMPANY_ID = os.environ.get("PLATFORM_COMPANY_ID", "") or None
+
+# Fixed-location fallback for the per-project IDs. Some server instances are
+# spawned WITHOUT project context (e.g. Claude Desktop's app-startup MCP server,
+# launched from C:\Windows\system32 before any project is open), so their
+# PLATFORM_PROJECT_ID / PLATFORM_USER_ID env vars are empty for the life of the
+# process. launch.py writes a snapshot of the active project's IDs here whenever
+# it DOES have project context; the getters below read it lazily so a
+# context-less process can still resolve the IDs at request time. This is the
+# same trick that already makes the API key work: read from a fixed path that
+# does not depend on knowing the project directory.
+_DATA_DIR = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data"
+)
+_SHARED_CONFIG_PATH = os.path.join(_DATA_DIR, "active_project.json")
+
+
+def _read_shared_config() -> dict:
+    try:
+        with open(_SHARED_CONFIG_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def default_project_id() -> str | None:
+    """Project ID from env, falling back to the shared active-project snapshot."""
+    return DEFAULT_PROJECT_ID or _read_shared_config().get("projectId")
+
+
+def default_user_id() -> str | None:
+    """User ID from env, falling back to the shared active-project snapshot."""
+    return DEFAULT_USER_ID or _read_shared_config().get("userId")
 
 _TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
 

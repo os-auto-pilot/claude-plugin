@@ -35,16 +35,18 @@ _MISSING_ID_HELP = (
 def _project(project_id: uuid.UUID | None) -> str:
     if project_id:
         return str(project_id)
-    if client.DEFAULT_PROJECT_ID:
-        return str(uuid.UUID(client.DEFAULT_PROJECT_ID))
+    pid = client.default_project_id()
+    if pid:
+        return str(uuid.UUID(str(pid)))
     raise ValueError(_MISSING_ID_HELP.format(field="projectId"))
 
 
 def _user(user_id: uuid.UUID | None) -> str | None:
     if user_id:
         return str(user_id)
-    if client.DEFAULT_USER_ID:
-        return str(uuid.UUID(client.DEFAULT_USER_ID))
+    uid = client.default_user_id()
+    if uid:
+        return str(uuid.UUID(str(uid)))
     return None
 
 
@@ -361,9 +363,7 @@ async def fetch_util_details(
     discovering which utilities are available in a module/feature, or for looking
     up a util by name before referencing it in test steps.
     """
-    project_id = input.projectId or client.DEFAULT_PROJECT_ID
-    if not project_id:
-        raise ValueError(_MISSING_ID_HELP.format(field="projectId"))
+    project_id = _project(input.projectId)
     params: dict[str, Any] = {
         "query": input.query or "",
         "testMode": input.testMode or "",
@@ -417,7 +417,7 @@ async def save_claude_utils(request: CreateUtilFromClaudeRequest) -> dict[str, A
         "module": request.module,
         "project_id": _project(request.projectId),
         "userName": request.userName,
-        "user_id": request.user_id,
+        "user_id": _user(request.user_id),
         "token": request.token,
     }
     return await client.post_platform("/api/utils/create-from-claude", payload)
@@ -674,7 +674,7 @@ async def get_user_details_by_id_or_email_or_unique_key(
         identifier = input.identifier
         pass
     resp = await client.get_backend(
-        f"/adminview/v1/users-by-branch-role?cmpId={input.cmpId}&query={identifier}&page=0&size=50"
+        f"/adminview/v1/users-by-branch-role?cmpId={input.companyId}&query={identifier}&page=0&size=50"
     )
     if resp["status_code"] == 200:
         users = resp["data"].get("content", [])
@@ -850,6 +850,7 @@ async def add_or_remove_test_cases_from_test_run(
                 uniqueKeys=unique_key_terms,
                 active=False,
                 deleted=False,
+                projectId=uuid.UUID(_project(input.projectId)),
             )
         )
         resolved_unique_key_ids_as_str = [
@@ -967,16 +968,16 @@ async def get_environments_assigned_to_user(
     input: GetEnvironmentsAssignedToUserInput,
 ) -> List[GetEnvironmentsAssignedToUserOutput]:
     """
-    Get list of environments assigned to a user. The registerId field in the input is used to identify the user for which assigned environments will be retrieved.
+    Get list of environments assigned to a user. The userID field in the input is used to identify the user for which assigned environments will be retrieved.
 
     Args:
-        input (GetEnvironmentsAssignedToUserInput): Input containing details for retrieving environments assigned to a user. The registerId field in the input is used to identify the user for which assigned environments will be retrieved.
+        input (GetEnvironmentsAssignedToUserInput): Input containing details for retrieving environments assigned to a user. The userID field in the input is used to identify the user for which assigned environments will be retrieved.
 
     Returns:
         List[GetEnvironmentsAssignedToUserOutput]: Output containing the list of environments assigned to the specified user.
     """
     resp = await client.get_backend(
-        f"/servers/v1/servers-by-user/{_user(input.registerId)}/{_project(input.projectId)}/true",
+        f"/servers/v1/servers-by-user/{_user(input.userID)}/{_project(input.projectId)}/true",
     )
     if resp["status_code"] == 200:
         environments = resp["data"]
@@ -994,16 +995,16 @@ async def get_projects_assigned_to_user(
     input: GetProjectsAssignedToUserInput,
 ) -> List[GetProjectsAssignedToUserOutput]:
     """
-    Get list of projects assigned to a user. The registerId field in the input is used to identify the user for which assigned projects will be retrieved.
+    Get list of projects assigned to a user. The userID field in the input is used to identify the user for which assigned projects will be retrieved.
 
     Args:
-        input (GetProjectsAssignedToUserInput): Input containing details for retrieving projects assigned to a user. The registerId field in the input is used to identify the user for which assigned projects will be retrieved.
+        input (GetProjectsAssignedToUserInput): Input containing details for retrieving projects assigned to a user. The userID field in the input is used to identify the user for which assigned projects will be retrieved.
 
     Returns:
         List[GetProjectsAssignedToUserOutput]: Output containing the list of projects assigned to the specified user.
     """
     resp = await client.get_backend(
-        f"/projectusers/v1/getassignprojects/{_user(input.registerId)}",
+        f"/projectusers/v1/getassignprojects/{_user(input.userID)}",
     )
     print(
         f"Response from get projects assigned to user API: {resp['status_code']} - {resp['data']}"
@@ -1017,8 +1018,8 @@ async def get_projects_assigned_to_user(
         raise Exception(f"Failed to retrieve projects assigned to user: {resp['data']}")
 
 
-@mcp.tool("get_test_cases_with_filters_in_a_project")
-async def get_test_cases_with_filters_in_a_project(
+@mcp.tool("get_test_cases_with_filters")
+async def get_test_cases_with_filters(
     input: GetTestCasesWithFiltersInAProjectInput,
 ) -> (
     List[GetTestCasesWithFiltersInAProjectOutput]
@@ -1082,12 +1083,12 @@ async def get_test_cases_with_filters_in_a_project(
             page += 1
 
         if len(collected) == 0:
-            if input.query:
+            if input.nameOrUniqueKey:
                 raise Exception(
-                    f"No test case found with name or unique key: {input.query} in the project with ID: {input.id}"
+                    f"No test case found with name or unique key: {input.nameOrUniqueKey} in the project with ID: {input.projectId}"
                 )
             raise Exception(
-                f"No test cases found for the provided filters in the project with ID: {input.id}"
+                f"No test cases found for the provided filters in the project with ID: {input.projectId}"
             )
 
         if len(collected) > 10:
@@ -1114,7 +1115,7 @@ async def get_test_cases_uuid_by_unique_keys(
     This method takes list of unique keys of test cases and returns list of test case uuids.
 
     Args:
-        input (List[str]): List of unique keys of the test cases.
+        input (GetTestCasesUUIDByUniqueKeyInput): Input containing details for retrieving test case UUIDs by unique keys.
 
     Returns:
         List[uuid.UUID]: List of UUIDs corresponding to the provided unique keys.
@@ -1127,7 +1128,7 @@ async def get_test_cases_uuid_by_unique_keys(
 
     async def _fetch_uuid_for_key(unique_key: str) -> uuid.UUID:
         params = {
-            "id": _project(input.id),
+            "id": _project(input.projectId),
             "query": unique_key,
             "deleted": input.deleted,
             "page": "0",
@@ -1150,7 +1151,7 @@ async def get_test_cases_uuid_by_unique_keys(
         test_cases = resp["data"].get("content", [])
         if len(test_cases) == 0:
             raise Exception(
-                f"No test case found with unique key: {unique_key} in project with ID: {input.id}"
+                f"No test case found with unique key: {unique_key} in project with ID: {input.projectId}"
             )
 
         for test_case in test_cases:
@@ -1161,7 +1162,7 @@ async def get_test_cases_uuid_by_unique_keys(
                 return uuid.UUID(str(test_case_id))
 
         raise Exception(
-            f"No exact test case match found for unique key: {unique_key} in project with ID: {input.id}"
+            f"No exact test case match found for unique key: {unique_key} in project with ID: {input.projectId}"
         )
 
     return await asyncio.gather(

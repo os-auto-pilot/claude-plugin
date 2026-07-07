@@ -155,6 +155,29 @@ def _inject_project_config(env: dict, project_dir: str) -> None:
         if val and not env.get(env_var):
             env[env_var] = str(val)
 
+    # Persist a fixed-location snapshot of the per-project IDs so server
+    # instances spawned WITHOUT project context (e.g. Claude Desktop's
+    # app-startup MCP server, launched from C:\Windows\system32 before any
+    # project is open) can still resolve them at request time. DATA_DIR is the
+    # same fixed path for every process of this plugin, so this healthy launch's
+    # snapshot is readable by a context-less one. See client.default_project_id.
+    # Only write when we actually have a project id, so a context-less launch
+    # never clobbers a good snapshot.
+    snapshot = {
+        key: config[key]
+        for key in ("projectId", "userId", "companyId")
+        if config.get(key)
+    }
+    if snapshot.get("projectId"):
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(
+                os.path.join(DATA_DIR, "active_project.json"), "w", encoding="utf-8"
+            ) as fh:
+                json.dump(snapshot, fh)
+        except Exception:
+            pass
+
 
 def main() -> None:
     bootstrap_only = "--bootstrap-only" in sys.argv[1:]
@@ -171,26 +194,6 @@ def main() -> None:
     env["PYTHONPATH"] = PLUGIN_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     _inject_project_config(env, project_dir)
     _inject_api_key(env)
-
-    # TEMP DEBUG — remove once the CLI-vs-Desktop cwd/env discrepancy is confirmed.
-    try:
-        import datetime
-
-        debug_log = os.path.join(DATA_DIR, "launch_debug.log")
-        os.makedirs(DATA_DIR, exist_ok=True)
-        with open(debug_log, "a", encoding="utf-8") as fh:
-            fh.write(
-                f"{datetime.datetime.now()} pid={os.getpid()} "
-                f"cwd_before_chdir={project_dir!r} "
-                f"CLAUDE_PROJECT_DIR={os.environ.get('CLAUDE_PROJECT_DIR')!r} "
-                f"project_config_json_found={os.path.exists(os.path.join(project_dir, 'config.json'))} "
-                f"PLATFORM_PROJECT_ID={env.get('PLATFORM_PROJECT_ID') or '<empty/unset>'} "
-                f"PLATFORM_COMPANY_ID={env.get('PLATFORM_COMPANY_ID') or '<empty/unset>'} "
-                f"PLATFORM_API_KEY={env.get('PLATFORM_API_KEY') or '<empty/unset>'}\n"
-                f"env_keys={list(env.items())}\n"
-            )
-    except Exception:
-        pass
 
     result = subprocess.run([py, "-m", "server"], env=env, cwd=PLUGIN_ROOT)
     sys.exit(result.returncode)
