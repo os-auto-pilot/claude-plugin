@@ -78,7 +78,7 @@ def ensure_venv() -> str:
 def _inject_api_key(env: dict) -> None:
     """Read the API key secret from ~/.claude/.credentials.json and inject it.
 
-    Claude Code's ${user_config.*} substitution in .config.json env blocks is not
+    Claude Code's ${user_config.*} substitution in config.json env blocks is not
     reliable: some spawned instances of this server receive a literal
     placeholder string (e.g. "your-api-key-here") instead of the real secret or
     an empty value. A placeholder is truthy, so a "fill only if unset" check
@@ -87,7 +87,7 @@ def _inject_api_key(env: dict) -> None:
 
     The API key is the only credential that stays in the global plugin config —
     everything else (company/user/project ID, API URLs) is per-project and comes
-    from the project's own .config.json (see _inject_project_config).
+    from the project's own config.json (see _inject_project_config).
     """
     import json
 
@@ -100,7 +100,7 @@ def _inject_api_key(env: dict) -> None:
     plugin_name = "auto-pilot"
     server_name = "auto-pilot"
     try:
-        config_json_path = os.path.join(PLUGIN_ROOT, ".config.json")
+        config_json_path = os.path.join(PLUGIN_ROOT, "config.json")
         with open(config_json_path, encoding="utf-8") as fh:
             config_data = json.load(fh)
         server_name = next(iter(config_data.get("mcpServers", {})), server_name)
@@ -126,11 +126,11 @@ def _inject_api_key(env: dict) -> None:
 
 
 def _inject_project_config(env: dict, project_dir: str) -> None:
-    """Read the project's .config.json (in the user's working directory — not
+    """Read the project's config.json (in the user's working directory — not
     the plugin directory) and inject company/user/project ID and API URLs.
 
     These values are per-project, not global plugin settings, so they live in a
-    .config.json that ships with the project folder itself rather than in
+    config.json that ships with the project folder itself rather than in
     ~/.claude/settings.json.
     """
     import json
@@ -140,11 +140,10 @@ def _inject_project_config(env: dict, project_dir: str) -> None:
         "userId": "PLATFORM_USER_ID",
         "projectId": "PLATFORM_PROJECT_ID",
         "platformApiUrl": "PLATFORM_API_URL",
-        "executionApiUrl": "EXECUTION_API_URL",
         "backendUrl": "BACKEND_URL",
     }
 
-    project_mcp_json = os.path.join(project_dir, ".config.json")
+    project_mcp_json = os.path.join(project_dir, "config.json")
     try:
         with open(project_mcp_json, encoding="utf-8") as fh:
             config = json.load(fh)

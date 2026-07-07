@@ -607,11 +607,7 @@ class GetProjectsAssignedToUserOutput(BaseModel):
 class GetTestCasesWithFiltersInAProjectInput(BaseModel):
     """Model representing the input for retrieving test cases with filters in a project
     """
-
-    id: Optional[uuid.UUID] = Field(
-        None,
-        description="ID of the project for which to retrieve test cases with filters",
-    )
+    
     nameOrUniqueKey: Optional[str] = Field(
         None, description="name or unique key of the test case"
     )

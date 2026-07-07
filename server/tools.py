@@ -24,7 +24,7 @@ mcp = FastMCP("auto-pilot plugin")
 
 
 _MISSING_ID_HELP = (
-    "No {field} given and no default configured. Read the `.config.json` file in "
+    "No {field} given and no default configured. Read the `config.json` file in "
     "the project's root directory (the folder you're working in, not the plugin "
     "directory) and pass its `{field}` value explicitly as the `{field}` argument "
     "to this tool. Do not search `.credentials.json` or `settings.json` for this — "
@@ -1031,7 +1031,7 @@ async def get_test_cases_with_filters_in_a_project(
     """
 
     base_params = {
-        "id": _project(input.id),
+        "id": _project(None),
         "query": input.nameOrUniqueKey,
         "testMode": input.testMode,
         "featureName": input.featureName,

@@ -19,7 +19,6 @@ import httpx
 
 # --- Configuration (injected by the plugin's .mcp.json from userConfig) --------
 PLATFORM_API_URL = os.environ.get("PLATFORM_API_URL", "http://localhost:8000").rstrip("/")
-EXECUTION_API_URL = os.environ.get("EXECUTION_API_URL", "http://localhost:3232").rstrip("/")
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8088").rstrip("/")
 API_KEY = os.environ.get("PLATFORM_API_KEY", "")
 DEFAULT_PROJECT_ID = os.environ.get("PLATFORM_PROJECT_ID", "") or None
@@ -70,16 +69,6 @@ async def post_platform(path: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 async def get_platform(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     resp = await get_client().get(f"{PLATFORM_API_URL}{path}", params=params)
-    return _result(resp)
-
-
-async def post_execution(path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    resp = await get_client().post(f"{EXECUTION_API_URL}{path}", json=payload)
-    return _result(resp)
-
-
-async def get_execution(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    resp = await get_client().get(f"{EXECUTION_API_URL}{path}", params=params)
     return _result(resp)
 
 async def post_backend(path: str, payload: dict[str, Any]) -> dict[str, Any]:
