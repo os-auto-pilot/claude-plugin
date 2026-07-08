@@ -1,6 +1,7 @@
 """Self-bootstrapping launcher for the Oniesoft MCP server.
 
-Claude Code runs this with whatever ``python`` is on PATH. It:
+Claude Code runs this via scripts/resolve-python.sh, which resolves a working
+Python 3.10+ interpreter cross-platform before handing off here. This script:
   1. Ensures a dedicated venv exists under ${CLAUDE_PLUGIN_DATA} (persists across
      plugin updates) and installs server/requirements.txt into it the first time
      or whenever requirements change.
@@ -17,8 +18,13 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
+
+# Generous ceiling so a stalled network install fails loudly instead of
+# hanging the launcher forever with no feedback.
+BOOTSTRAP_TIMEOUT = 300
 
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER_DIR = os.path.join(PLUGIN_ROOT, "server")
@@ -59,16 +65,30 @@ def ensure_venv() -> str:
         return py
 
     os.makedirs(DATA_DIR, exist_ok=True)
-    if not os.path.exists(py):
-        subprocess.run([sys.executable, "-m", "venv", VENV_DIR], check=True)
     try:
+        if not os.path.exists(py):
+            subprocess.run(
+                [sys.executable, "-m", "venv", VENV_DIR],
+                check=True,
+                timeout=BOOTSTRAP_TIMEOUT,
+            )
         subprocess.run(
-            [py, "-m", "pip", "install", "-q", "-r", REQUIREMENTS], check=True
+            [py, "-m", "pip", "install", "-q", "-r", REQUIREMENTS],
+            check=True,
+            timeout=BOOTSTRAP_TIMEOUT,
         )
-    except subprocess.CalledProcessError:
-        # Leave no stamp so the next launch retries the install.
-        if os.path.exists(STAMP):
-            os.remove(STAMP)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        # A half-built venv (interrupted `venv` creation, a locked file from
+        # an antivirus scan, a stale dir from an install/uninstall/reinstall
+        # cycle) would otherwise wedge every future launch the same way.
+        # Remove it entirely so the next launch starts clean instead of
+        # retrying on top of the wreckage.
+        shutil.rmtree(VENV_DIR, ignore_errors=True)
+        print(
+            f"auto-pilot: venv bootstrap failed ({exc}); removed {VENV_DIR}, "
+            "will retry next launch",
+            file=sys.stderr,
+        )
         raise
     with open(STAMP, "w", encoding="utf-8") as fh:
         fh.write(want)
