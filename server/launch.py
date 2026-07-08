@@ -1,101 +1,33 @@
-"""Self-bootstrapping launcher for the Oniesoft MCP server.
+"""Launcher for the Oniesoft MCP server.
 
-Claude Code runs this via scripts/resolve-python.sh, which resolves a working
-Python 3.10+ interpreter cross-platform before handing off here. This script:
-  1. Ensures a dedicated venv exists under ${CLAUDE_PLUGIN_DATA} (persists across
-     plugin updates) and installs server/requirements.txt into it the first time
-     or whenever requirements change.
-  2. Re-execs the venv's python on ``-m server`` (stdio MCP).
+Claude Code runs this via ``uv run --with-requirements server/requirements.txt``,
+which resolves/installs a compatible Python and dependencies before handing off
+here — cross-platform, with no bespoke venv-bootstrap code needed in this file.
 
-Run with ``--bootstrap-only`` (used by the SessionStart hook) to do step 1 and
-exit, so the first tool call isn't delayed by the install.
+This script only injects environment (API key, per-project config) that Claude
+Code's own ${user_config.*} substitution can't reliably provide, then runs the
+server in-process.
 
-Cross-platform: this script picks the right venv layout (Scripts/ vs bin/), so
-the static .mcp.json doesn't have to.
+Run with ``--bootstrap-only`` (used by the SessionStart hook) to let `uv run`
+finish syncing dependencies and exit immediately, so the first tool call isn't
+delayed by the install.
 """
 
 from __future__ import annotations
 
-import hashlib
+import json
 import os
-import shutil
-import subprocess
 import sys
-
-# Generous ceiling so a stalled network install fails loudly instead of
-# hanging the launcher forever with no feedback.
-BOOTSTRAP_TIMEOUT = 300
+from collections.abc import MutableMapping
 
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SERVER_DIR = os.path.join(PLUGIN_ROOT, "server")
-REQUIREMENTS = os.path.join(SERVER_DIR, "requirements.txt")
 
 # ${CLAUDE_PLUGIN_DATA} is exported to plugin subprocesses; fall back to a local
 # dir for `--plugin-dir` dev use where it may be unset.
 DATA_DIR = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.join(PLUGIN_ROOT, ".data")
-VENV_DIR = os.path.join(DATA_DIR, "venv")
-STAMP = os.path.join(VENV_DIR, ".requirements.sha256")
 
 
-def _venv_python() -> str:
-    if os.name == "nt":
-        return os.path.join(VENV_DIR, "Scripts", "python.exe")
-    return os.path.join(VENV_DIR, "bin", "python")
-
-
-def _requirements_hash() -> str:
-    with open(REQUIREMENTS, "rb") as fh:
-        return hashlib.sha256(fh.read()).hexdigest()
-
-
-def _stamp_matches(want: str) -> bool:
-    try:
-        with open(STAMP, "r", encoding="utf-8") as fh:
-            return fh.read().strip() == want
-    except OSError:
-        return False
-
-
-def ensure_venv() -> str:
-    """Create/refresh the venv if missing or requirements changed. Returns the
-    venv python path."""
-    py = _venv_python()
-    want = _requirements_hash()
-    if os.path.exists(py) and _stamp_matches(want):
-        return py
-
-    os.makedirs(DATA_DIR, exist_ok=True)
-    try:
-        if not os.path.exists(py):
-            subprocess.run(
-                [sys.executable, "-m", "venv", VENV_DIR],
-                check=True,
-                timeout=BOOTSTRAP_TIMEOUT,
-            )
-        subprocess.run(
-            [py, "-m", "pip", "install", "-q", "-r", REQUIREMENTS],
-            check=True,
-            timeout=BOOTSTRAP_TIMEOUT,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        # A half-built venv (interrupted `venv` creation, a locked file from
-        # an antivirus scan, a stale dir from an install/uninstall/reinstall
-        # cycle) would otherwise wedge every future launch the same way.
-        # Remove it entirely so the next launch starts clean instead of
-        # retrying on top of the wreckage.
-        shutil.rmtree(VENV_DIR, ignore_errors=True)
-        print(
-            f"auto-pilot: venv bootstrap failed ({exc}); removed {VENV_DIR}, "
-            "will retry next launch",
-            file=sys.stderr,
-        )
-        raise
-    with open(STAMP, "w", encoding="utf-8") as fh:
-        fh.write(want)
-    return py
-
-
-def _inject_api_key(env: dict) -> None:
+def _inject_api_key(env: MutableMapping[str, str]) -> None:
     """Read the API key secret from ~/.claude/.credentials.json and inject it.
 
     Claude Code's ${user_config.*} substitution in config.json env blocks is not
@@ -109,8 +41,6 @@ def _inject_api_key(env: dict) -> None:
     everything else (company/user/project ID, API URLs) is per-project and comes
     from the project's own config.json (see _inject_project_config).
     """
-    import json
-
     home = os.path.expanduser("~")
     claude_dir = os.path.join(home, ".claude")
 
@@ -145,7 +75,7 @@ def _inject_api_key(env: dict) -> None:
         pass
 
 
-def _inject_project_config(env: dict, project_dir: str) -> None:
+def _inject_project_config(env: MutableMapping[str, str], project_dir: str) -> None:
     """Read the project's config.json (in the user's working directory — not
     the plugin directory) and inject company/user/project ID and API URLs.
 
@@ -153,8 +83,6 @@ def _inject_project_config(env: dict, project_dir: str) -> None:
     config.json that ships with the project folder itself rather than in
     ~/.claude/settings.json.
     """
-    import json
-
     field_env_map = {
         "companyId": "PLATFORM_COMPANY_ID",
         "userId": "PLATFORM_USER_ID",
@@ -201,22 +129,20 @@ def _inject_project_config(env: dict, project_dir: str) -> None:
 
 def main() -> None:
     bootstrap_only = "--bootstrap-only" in sys.argv[1:]
-    py = ensure_venv()
     if bootstrap_only:
+        # `uv run` has already synced the environment by the time this code
+        # runs; nothing further to do.
         return
-    # Run the venv python as a child process.  We keep this launcher alive as a/exit
-    # thin wrapper so that the MCP stdio pipe (which Claude Code opened to THIS
-    # process) stays connected.  os.execve doesn't replace the process on
-    # Windows — it spawns a child and exits, breaking the pipe.
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    os.chdir(PLUGIN_ROOT)
-    env = dict(os.environ)
-    env["PYTHONPATH"] = PLUGIN_ROOT + os.pathsep + env.get("PYTHONPATH", "")
-    _inject_project_config(env, project_dir)
-    _inject_api_key(env)
 
-    result = subprocess.run([py, "-m", "server"], env=env, cwd=PLUGIN_ROOT)
-    sys.exit(result.returncode)
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    _inject_project_config(os.environ, project_dir)
+    _inject_api_key(os.environ)
+
+    sys.path.insert(0, PLUGIN_ROOT)
+    os.chdir(PLUGIN_ROOT)
+    from server.tools import mcp  # noqa: E402
+
+    mcp.run()  # stdio transport
 
 
 if __name__ == "__main__":

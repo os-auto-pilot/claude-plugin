@@ -5,7 +5,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/server/launch.py\" --bootstrap-only"
+            "command": "uv run --with-requirements \"${CLAUDE_PLUGIN_ROOT}/server/requirements.txt\" --python \">=3.10\" \"${CLAUDE_PLUGIN_ROOT}/server/launch.py\" --bootstrap-only"
+          },
+          {
+            "type": "command",
+            "command": "uv run --python \">=3.10\" \"${CLAUDE_PLUGIN_ROOT}/scripts/register_desktop_mcp.py\""
           }
         ]
       }
