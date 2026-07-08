@@ -846,11 +846,10 @@ async def add_or_remove_test_cases_from_test_run(
         print(f"Resolving unique keys to IDs for: {unique_key_terms}")
         resolved_unique_key_ids = await get_test_cases_uuid_by_unique_keys(
             GetTestCasesUUIDByUniqueKeyInput(
-                id=uuid.UUID(_project(input.projectId)),
+                projectId=uuid.UUID(_project(input.projectId)),
                 uniqueKeys=unique_key_terms,
                 active=False,
                 deleted=False,
-                projectId=uuid.UUID(_project(input.projectId)),
             )
         )
         resolved_unique_key_ids_as_str = [
