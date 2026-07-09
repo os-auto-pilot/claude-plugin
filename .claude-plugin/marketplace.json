@@ -3,6 +3,7 @@
   "owner": {
     "name": "Oniesoft"
   },
+  "description": "Oniesoft's marketplace of Claude Code plugins for the Oniesoft test automation platform.",
   "plugins": [
     {
       "name": "auto-pilot",

@@ -1,8 +1,13 @@
 {
   "mcpServers": {
     "auto-pilot": {
-      "command": "python",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server/launch.py"],
+      "command": "uv",
+      "args": [
+        "run",
+        "--with-requirements", "${CLAUDE_PLUGIN_ROOT}/server/requirements.txt",
+        "--python", ">=3.10",
+        "${CLAUDE_PLUGIN_ROOT}/server/launch.py"
+      ],
       "env": {
         "PLATFORM_API_KEY": "${user_config.platform_api_key}"
       }
