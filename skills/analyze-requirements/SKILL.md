@@ -508,8 +508,27 @@ call post "/api/users"
 check status code is 201
 check "$.id" value is "<user_id>"
 store the "$.id" in "created_user_id"
-call get "/api/users/$$created_user_id"
+with path parameter "id" and "$$created_user_id"
+call get "/api/users/{id}"
 check status code is 200
+```
+
+**Path parameters — CRITICAL:** Never interpolate a path value — literal, `<placeholder>`, or `$$stored_variable` — directly into the URL string. Use a dedicated path-parameter step before the `call` step, and reference the parameter by name in the URL with `{name}` curly-brace placeholders:
+
+- One path parameter: `with path parameter "<name>" and "<value>"` — repeat this step once per parameter when there are several
+- Several path parameters at once: `with path parameters {"name1": "<value1>", "name2": "<value2>"}`
+
+```
+✅ CORRECT:
+with path parameter "id" and "$$created_user_id"
+call get "/api/users/{id}"
+
+with path parameters {"userId": "$$user_id", "orderId": "$$order_id"}
+call get "/api/users/{userId}/orders/{orderId}"
+
+❌ WRONG — value interpolated directly into the URL:
+call get "/api/users/$$created_user_id"
+call get "/api/users/123"
 ```
 
 **Variable store/access rule — CRITICAL (applies to web, mobile, and API):**
@@ -524,7 +543,8 @@ store the "$.csrf_token" in "csrf_token"
 with headers {"x-csrf-token": "$$csrf_token"}
 
 store the "$.id" in "user_id"
-call get "/api/users/$$user_id"
+with path parameter "id" and "$$user_id"
+call get "/api/users/{id}"
 with body {"owner": "$$user_id", "name": "<name>"}
 
 # Web / Mobile
@@ -534,11 +554,11 @@ navigate to "/orders/$$order_id"
 
 ❌ WRONG — accessing variable without $$:
 with headers {"x-csrf-token": "csrf_token"}
-call get "/api/users/user_id"
+with path parameter "id" and "user_id"
 check variable "order_id" is equal to "order_id"
 ```
 
-Every place a stored variable is **used** — in `with body`, `with headers`, `with query parameters`, API URLs, `check the expression`, `check variable`, `navigate to`, or any step that references the value — it must be prefixed with `$$`. The plain name appears only in the `store ... in "name"` step itself.
+Every place a stored variable is **used** — in `with body`, `with headers`, `with query parameters`, `with path parameter(s)`, `check the expression`, `check variable`, `navigate to`, or any step that references the value — it must be prefixed with `$$`. The plain name appears only in the `store ... in "name"` step itself. Note that the URL string passed to `call get/post/put/delete` itself never carries a stored variable directly — path values always go through a `with path parameter` / `with path parameters` step and a `{name}` placeholder in the URL (see the Path parameters rule above).
 
 ---
 
