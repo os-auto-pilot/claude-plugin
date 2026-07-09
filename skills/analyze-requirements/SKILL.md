@@ -10,7 +10,7 @@ manual test cases in the standard Oniesoft template.
 
 > **IMPORTANT — Output file location:** Always write ALL output files (`test-cases-*.md`, `test-coverage.md`, `swagger-spec.json`, etc.) to the **current working directory** — the folder the user launched Claude from. Never write files into the plugin directory or the skill's own folder. Use plain filenames (no path prefix) so they land in the cwd automatically.
 
-fetch user details using `get_user_details_by_id_or_email_or_unique_key` and use it for username, author, created by fields where creating test cases, utils.
+Before authoring anything that will be persisted (utils via `save_claude_utils`, test cases via `save_claude_test_cases`), resolve the current user's **display name** with `get_user_details_by_id_or_email_or_unique_key` and use **`empName` from the response** — never the email, never a UUID — for the `userName` (utils) / `created_by` (test cases) field. See `skills/push-to-autopilot/SKILL.md` → "Known backend quirks" for why this matters and what happens if you get it wrong.
 
 ## Step 1 — Intake: requirement doc / Swagger / codebase
 
@@ -429,6 +429,14 @@ Cover all of:
 - No Element Info section needed for API test cases
 
 **Naming:** Use a concise descriptive name only — do NOT prefix with TC-001 or any ID/key. The platform assigns IDs automatically.
+
+---
+
+**Element Info table completeness — CRITICAL:**
+
+Every test case's (and util's) own **Element Info** table must contain a row for **every** `el:` element referenced in that section's own Test Steps / Autopilot Steps — including elements already defined in an earlier util or test case in the same file. Do not omit an element from a test case's table just because it was already resolved elsewhere in the document; repeat its row.
+
+Phase 3 (`/push-to-autopilot`) builds each test case's `elements` payload only from that test case's own table. An `el:` reference missing from its own table will not be sent to the backend for that test case — even if the same element was fully resolved in an earlier section — and the backend cannot convert it to an element ID.
 
 ---
 

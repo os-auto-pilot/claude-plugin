@@ -29,6 +29,25 @@ If `config.json` is missing a value you need, or a tool call fails with "No proj
 }
 ```
 
+## Author / created_by Fields
+
+`save_claude_utils` (`userName`) and `save_claude_test_cases` (`created_by`)
+require a **plain human display name**, e.g. `"Surya"` — never an email
+address, never a UUID. Resolve it via `get_user_details_by_id_or_email_or_unique_key`
+and use **`empName`** from the response. Passing an email (contains `@`) or a
+UUID does not raise a validation error — the backend silently drops the entire
+batch and returns a generic `{"detail": "No test cases were saved"}` with no
+indication of which field caused it. Full detail and other related backend
+quirks (bare-tag CSS selectors, a ~300-char `description` limit) are documented
+in `skills/push-to-autopilot/SKILL.md` under "Known backend quirks".
+
+`get_user_details_by_id_or_email_or_unique_key` requires a real `companyId` —
+read it from `.configs.json` per the Project Connection Details section above.
+Never pass a placeholder/zero-filled UUID for `companyId` (or any other
+required ID) just to make a call succeed structurally — a wrong ID produces a
+misleading "not found" error instead of the real problem (a missing config
+value). Ask the user for it if it's genuinely unavailable.
+
 ## Tool Scope Rules
 
 `get_autopilot_steps` — **only call this tool from within the `/analyze-requirements` skill**, during Step 2c before writing any autopilot steps. Never call it in any other skill, agent, or inline conversation.

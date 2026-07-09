@@ -134,7 +134,9 @@ Spawn one subagent per markdown file. Each file is independent — subagents run
 
 ### 4A — Fill Element Info tables
 
-For each Element Info table row, look up the element name in the registry and fill in:
+**First, ensure completeness — CRITICAL:** for each UTIL-NNN / TC-NNN section, scan its own `Autopilot Steps` (and `Test Steps`) for every `el:` reference. If an element is referenced in that section's steps but has no row in that section's own Element Info table, add one — even if the element was already fully resolved in an earlier section of the same file. Do not rely on a row existing elsewhere in the document; each section's table must be self-contained, because Phase 3 builds each test case's `elements` payload only from that test case's own table.
+
+Then, for each Element Info table row (including newly added ones), look up the element name in the registry and fill in:
 
 | Element | Playwright Locator | CSS Selector | XPath |
 |---------|--------------------|--------------|-------|

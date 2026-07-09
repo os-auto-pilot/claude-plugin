@@ -10,6 +10,35 @@ the autopilot backend.
 
 > **IMPORTANT — File location:** All markdown files (`test-cases-*.md`, `test-coverage.md`) live in the **current working directory** — the folder the user launched Claude from. Always read from and write to the cwd, never the plugin directory.
 
+## Step -1 — Resolve the author's display name (do this once, first)
+
+Both `save_claude_utils` (`userName` field) and `save_claude_test_cases`
+(`created_by` field) require a **plain human display name** — e.g. `"Surya"` —
+never an email address and never a UUID.
+
+1. Call `get_user_details_by_id_or_email_or_unique_key` with whatever identifier
+   you have (the session's user email is usually available in context) and the
+   project's `companyId` (read from `.configs.json` per `CLAUDE.md` — do **not**
+   invent or zero-fill a placeholder `companyId`; if `.configs.json` is missing
+   or has no `companyId`, ask the user for it before calling this tool, exactly
+   as `CLAUDE.md` already instructs for missing project/company/user IDs).
+2. Take **`empName`** from the response — that is the field to use, not
+   `email`, not `userId`, not `empId`.
+3. Use that name verbatim as `userName` in every `save_claude_utils` call and
+   `created_by` in every `save_claude_test_cases` call for the rest of this
+   push. Resolve it once per session, not once per call.
+4. If the lookup genuinely fails (user not found, no `companyId` available even
+   after asking), ask the user directly: *"What name should I record as the
+   author of these test cases/utils?"* — do not fall back to their email or a
+   UUID, and do not fabricate a name.
+
+**Why this matters:** an email address (contains `@`) or a UUID passed as
+`created_by`/`userName` does not raise a validation error — the backend
+silently drops every test case in the batch and returns
+`{"detail": "No test cases were saved"}` with no indication of which field
+caused it. This is easy to lose an hour to; resolving the name up front avoids
+it entirely.
+
 ## Step 0 — Save unpersisted utils
 
 Before pushing any test cases, scan each markdown file for `UTIL-NNN` sections
@@ -38,6 +67,8 @@ You need for every push call:
 - `test_mode` — ask the user once per file: `web`, `api`, or `mobile`
 - `project_id` — use the plugin default; ask only if not configured
 - `user_id` — use the plugin default; ask only if not configured
+- `created_by` (test cases) / `userName` (utils) — the `empName` resolved in
+  Step -1. Never an email, never a UUID.
 
 ## Step 3 — Push using save_claude_test_cases
 
@@ -144,6 +175,47 @@ After all batches for a file are pushed:
   correct scopes.
 - **4xx/5xx** — surface the error verbatim and skip that batch; continue with
   the rest.
+
+## Known backend quirks — `save_claude_test_cases` fails silently, no per-item error
+
+`save_claude_test_cases` returns `{"detail": "No test cases were saved"}` (400)
+for the **entire batch**, or silently drops **individual** test cases from a
+batch (check `total_test_cases` in the response against how many you sent —
+if it's lower, some were dropped with no indication of which one or why),
+for reasons that are not validated anywhere in the MCP tool schema. Known
+triggers, discovered by bisection:
+
+1. **`created_by` contains `@` (an email) or is a raw UUID.** See Step -1 above
+   — always resolve and use `empName` instead.
+2. **A bare single-tag CSS selector** for any element, e.g. `"h1"`, `"button"`,
+   `"div"` with no attribute/class/ancestor scoping. Fails the whole test case
+   silently. Fix: scope it, e.g. `"main h1"`, `"form button[type=submit]"`,
+   `".card h1"`. This applies even when the selector is accurate — Playwright's
+   `page.locator('h1')` in a recording is a valid *locator* but is not an
+   acceptable *CSS selector* for this endpoint on its own.
+3. **`description` longer than roughly 300 characters** gets silently rejected
+   — no field-level error, just the generic "No test cases were saved" for
+   that test case. Keep descriptions under ~200 characters. If the source
+   material needs more nuance (e.g. flagging an inferred/unverified
+   constraint), put the caveat in a `<!-- COMMENT -->` in the markdown file
+   instead of stuffing it into the pushed `description`.
+
+**How to debug a batch that silently drops items:** don't guess — bisect.
+Retry the suspected test case **alone** with a throwaway name first (to
+separate "is it this test case" from "is it a duplicate name conflict"), then
+strip it down step-by-step (short description → long description; one element
+at a time) until the failing ingredient is isolated. This is faster than
+re-reading the schema for constraints that aren't there.
+
+**Do not debug by trial-and-error pushes into the real target module/feature.**
+There is no delete or update tool exposed via MCP for test cases — every debug
+probe you push is permanent clutter the user has to clean up by hand in the UI.
+If you must bisect live, say so before doing it (*"I'll need to push a few
+throwaway probes into `<module>/<feature>` to isolate this — they'll need
+manual cleanup after"*) rather than doing dozen of silent retries, and use the
+shortest, most obviously-throwaway names possible (e.g. prefix
+`ZZ_DEBUG_DELETE_ME_`) so they're easy for the user to find and bulk-remove
+afterward.
 
 ## Note on step format
 
