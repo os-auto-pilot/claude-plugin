@@ -18,8 +18,8 @@ never an email address and never a UUID.
 
 1. Call `get_user_details_by_id_or_email_or_unique_key` with whatever identifier
    you have (the session's user email is usually available in context) and the
-   project's `companyId` (read from `.configs.json` per `CLAUDE.md` — do **not**
-   invent or zero-fill a placeholder `companyId`; if `.configs.json` is missing
+   project's `companyId` (read from `config.json` per `CLAUDE.md` — do **not**
+   invent or zero-fill a placeholder `companyId`; if `config.json` is missing
    or has no `companyId`, ask the user for it before calling this tool, exactly
    as `CLAUDE.md` already instructs for missing project/company/user IDs).
 2. Take **`empName`** from the response — that is the field to use, not

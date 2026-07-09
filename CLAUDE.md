@@ -12,7 +12,7 @@ This is a Claude Code plugin (MCP server) that integrates Claude with the Onieso
 
 Company ID, user ID, project ID, and the three API URLs are per-project settings, stored in a `config.json` file in the project folder (the directory you're working in — read it directly, the same way you read any other file in the repo).
 
-**At the start of each session, read `.configs.json` from the project root and keep `companyId`/`projectId`/`userId` in mind for the rest of the conversation.** Pass them explicitly as `projectId` / `companyId` / `userId` (or `registerId` where a tool asks for the user's ID) on every tool call that accepts them — do not assume they are auto-injected. (`server/launch.py` also tries to inject them as environment variables at server startup as a bonus fallback, but this depends on the MCP host launching the server with the project directory as its working directory, which is not reliable — don't depend on it.)
+**At the start of each session, read `config.json` from the project root and keep `companyId`/`projectId`/`userId` in mind for the rest of the conversation.** Pass them explicitly as `projectId` / `companyId` / `userId` (or `registerId` where a tool asks for the user's ID) on every tool call that accepts them — do not assume they are auto-injected. (`server/launch.py` also tries to inject them as environment variables at server startup as a bonus fallback, but this depends on the MCP host launching the server with the project directory as its working directory, which is not reliable — don't depend on it.)
 
 The **API key** is the only credential that stays in the global plugin config (set once in Claude Code settings), sourced from `~/.claude/.credentials.json` and injected as `PLATFORM_API_KEY`. This one *is* reliably injected — no need to read or pass it.
 
@@ -42,7 +42,7 @@ quirks (bare-tag CSS selectors, a ~300-char `description` limit) are documented
 in `skills/push-to-autopilot/SKILL.md` under "Known backend quirks".
 
 `get_user_details_by_id_or_email_or_unique_key` requires a real `companyId` —
-read it from `.configs.json` per the Project Connection Details section above.
+read it from `config.json` per the Project Connection Details section above.
 Never pass a placeholder/zero-filled UUID for `companyId` (or any other
 required ID) just to make a call succeed structurally — a wrong ID produces a
 misleading "not found" error instead of the real problem (a missing config
