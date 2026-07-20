@@ -138,21 +138,23 @@ Run all applicable branches **simultaneously** (they are independent). Each bran
 **If the user gives a URL** (not a local file), fetch the spec using the provided script — do NOT use Playwright or a browser:
 
 ```
-python scripts/fetch_swagger.py "<url>" --output swagger-spec.json
+python skills/analyze-requirements/scripts/fetch_swagger.py "<url>" --output swagger-spec.json
 ```
 
 If a bearer token is needed: add `--token "<token>"`.
 
-The script handles Swagger UI HTML pages, JSON specs, and YAML specs automatically. It resolves the real spec URL from the UI page and falls back to common paths (`/openapi.json`, `/api-docs`, etc.) if needed. Read `swagger-spec.json` once the command succeeds.
+The script handles Swagger UI HTML pages, JSON specs, and YAML specs automatically. It resolves the real spec URL from the UI page and falls back to common paths (`/openapi.json`, `/api-docs`, etc.) if needed. It also writes a companion **`swagger-spec.endpoints.json`** — one flattened entry per `(method, path)` operation with that endpoint's request `content_types`, `request_fields` (file-upload fields pre-flagged with `"is_file": true`), path/query/header parameters, `auth`, and `responses`. **Read `swagger-spec.endpoints.json` first** — it is the authoritative, pre-extracted source for exactly the per-endpoint facts below (especially content-type and file fields); fall back to reading `swagger-spec.json` directly only for anything the summary doesn't cover.
 
-**If the user gives a local file** (`.json` / `.yaml` / `.yml`), read it directly — no script needed.
+**If the user gives a local file** (`.json` / `.yaml` / `.yml`), read it directly — no script needed. There is no pre-built endpoints summary in this case, so extract the fields below by hand from the spec, endpoint by endpoint.
 
-Extract directly from the spec — no recordings needed, no codebase grep needed for constraints:
+Extract directly from the spec (or from `swagger-spec.endpoints.json` when available) — no recordings needed, no codebase grep needed for constraints:
 
 - Field names, types, `minLength`, `maxLength`, `minimum`, `maximum`, `pattern`, `enum`, `required`
 - Field descriptions (often contain business rules)
 - `example` / `examples` values → use as +Ve test data
 - `4xx` response schemas → extract error message text and field-error mapping
+- **Request content-type per endpoint** — `content_types` in the summary (or `consumes` / `requestBody.content` keys read directly from the spec). Record it alongside the endpoint so Step 3 picks the right body step(s): `with body` for `application/json`, or `with form data` + `with file params` for `multipart/form-data` — see "For API test cases" below. Do this **per endpoint** — a spec can mix both.
+- **File-upload fields per endpoint** — fields flagged `"is_file": true` in the summary (or, reading the spec directly: OpenAPI 3.x properties with `type: string, format: binary`, or Swagger 2.0 params with `in: formData, type: file`). These need the `with file params` step, not `with form data`.
 
 Produces: **Validation Schema Map**
 
@@ -425,6 +427,7 @@ Cover all of:
 
 **For API test cases:**
 - Steps use autopilot API format (see format reference below)
+- **Body step selection is driven by the endpoint's content-type, never assumed:** if the Validation Schema Map / API Schema Map recorded `multipart/form-data` for this endpoint, use `with form data {...}` for its non-file fields and `with file params {...}` for its file fields — do NOT use `with body {...}` for it. Use `with body {...}` only for `application/json` (the default when no content-type was recorded). Check this per endpoint, not once per file — a spec can mix JSON and multipart endpoints.
 - -Ve test cases: missing required fields (→ 400), wrong types, out-of-range values, unauthorized (→ 401/403), not found (→ 404)
 - No Element Info section needed for API test cases
 
@@ -511,6 +514,28 @@ store the "$.id" in "created_user_id"
 with path parameter "id" and "$$created_user_id"
 call get "/api/users/{id}"
 check status code is 200
+```
+
+**Form-data / multipart endpoints — CRITICAL:** `with body {...}` is only for `application/json` requests. If the Swagger spec records `multipart/form-data` for an endpoint (or a `swagger-spec.endpoints.json` entry flags it — see Branch S), use two separate steps instead — never `with body` for that endpoint:
+- `with form data {...}` — a dict of the endpoint's non-file fields
+- `with file params {...}` — a dict of `{"<field name>": "<file name>"}` for its file-upload fields (fields flagged `is_file: true` in the endpoints summary, or `type: string, format: binary` / Swagger 2.0 `in: formData, type: file` read directly from the spec)
+
+Both steps can be used together on the same request when it has both kinds of fields; use whichever ones the endpoint actually needs.
+
+```
+✅ CORRECT — endpoint content-type is multipart/form-data, with one file field and one text field:
+with form data {"description": "<description>"}
+with file params {"file": "sample.pdf"}
+call post "/api/documents/upload"
+check status code is 201
+
+❌ WRONG — using the JSON body step for a multipart endpoint:
+with body {"file": "<file>", "description": "<description>"}
+call post "/api/documents/upload"
+
+❌ WRONG — file field put in "with form data" instead of "with file params":
+with form data {"file": "<file>", "description": "<description>"}
+call post "/api/documents/upload"
 ```
 
 **Path parameters — CRITICAL:** Never interpolate a path value — literal, `<placeholder>`, or `$$stored_variable` — directly into the URL string. Use a dedicated path-parameter step before the `call` step, and reference the parameter by name in the URL with `{name}` curly-brace placeholders:
