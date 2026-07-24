@@ -103,6 +103,20 @@ Build the `test_cases` array from the markdown file. Each item:
 }
 ```
 
+**Elements with a `locator_spec`** (recording-sourced, per `analyze-requirements` Branch R —
+JSON like `{"steps": [{"method": "get_by_role", ...}]}`): put that JSON string, verbatim and
+unmodified, into **both** `css_selector` and `xpath` on the element. Confirmed against
+`agentic_ai_be`'s actual persistence code (`claude_test_case_service.py`/
+`claude_util_service.py`: `selector = el.css_selector or el.xpath or "selector"`) —
+`css_selector` is the field that's actually authoritative (it wins whenever present; `xpath` is
+only a fallback if `css_selector` is empty). Still write to both: it costs nothing, and it means
+this doesn't silently break if that precedence ever changes.
+```json
+{"name": "otp_textbox", "css_selector": "{\"steps\": [{\"method\": \"get_by_role\", \"args\": [\"textbox\"], \"kwargs\": {\"name\": \"Enter 6-digit OTP\"}}]}", "xpath": "{\"steps\": [{\"method\": \"get_by_role\", \"args\": [\"textbox\"], \"kwargs\": {\"name\": \"Enter 6-digit OTP\"}}]}"}
+```
+Do not split the JSON across the two fields or otherwise alter it — the executing runtime parses
+it as one unit.
+
 **Test cases that call utils** use `execute util "<uuid>"` in steps — always UUID, never util name. Test data overrides for util fields use the format `<field>_i<N>_<util-uuid>` where `N` is the invocation number. Override is optional; omit it if the util's default data is sufficient.
 
 ```json
@@ -199,6 +213,15 @@ triggers, discovered by bisection:
    material needs more nuance (e.g. flagging an inferred/unverified
    constraint), put the caveat in a `<!-- COMMENT -->` in the markdown file
    instead of stuffing it into the pushed `description`.
+4. **`css_selector`/`xpath` holding a JSON `locator_spec`** (see Step 3 above) has not yet been
+   exercised with a real push the way quirks 1-3 were, but the persistence path was read
+   directly: `claude_test_case_service.py`/`claude_util_service.py` do
+   `selector = el.css_selector or el.xpath or "selector"` with no format/regex validation on
+   either field, and `ClaudeElement.css_selector`/`.xpath` are plain unvalidated `Optional[str]`
+   — there's no code path that would reject a JSON string specifically. Quirk 2 is about *bare
+   single-tag* selectors only, which a JSON object string is not. Still, if a test case with a
+   `locator_spec` element fails silently, bisect it first per the method below before assuming
+   the cause is elsewhere.
 
 **How to debug a batch that silently drops items:** don't guess — bisect.
 Retry the suspected test case **alone** with a throwaway name first (to

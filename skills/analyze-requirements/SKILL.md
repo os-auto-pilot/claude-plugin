@@ -258,7 +258,41 @@ Only use this branch when no frontend codebase was provided (requirements doc or
 
 Read the full recording file(s) and use LLM analysis to extract every element — do NOT use a fixed pattern table. Every `page.*` and `expect(page.*)` call must produce an element entry. Nothing is skipped.
 
-For each line, understand the intent: what element is being interacted with, what action is performed, and what data is used. Use that understanding to assign an `el:` name, preserve the exact Playwright locator, and derive a CSS selector where possible.
+For each line, understand the intent: what element is being interacted with, what action is performed, and what data is used. Use that understanding to assign an `el:` name and preserve the exact Playwright locator.
+
+**Locator encoding — transcribe, do not guess.** The backend can execute a JSON locator spec that preserves the *original* Playwright locator call instead of translating it into CSS/XPath. For any locator matching the Playwright strategies below, transcribe it mechanically into this JSON shape — this is a syntax mapping (JS/TS call → JSON), not a semantic guess, so it needs no DOM access and carries no ambiguity:
+
+```json
+{"steps": [{"method": "<python_method_name>", "args": [...], "kwargs": {...}}]}
+```
+
+Chained calls (`.filter()`, `.and()`, `.or()`, `.first`, `.last`, `.nth()`, `.frameLocator()`) become successive entries in the `steps` array, in the same order as the recording. A `has`/`has_not` filter value, or an `and`/`or` argument, that is itself another locator becomes a nested `{"steps": [...]}` object in that position.
+
+**Transcription table** (JS/TS recording syntax → JSON `method` + arg mapping):
+
+| Recording call | JSON `method` | args / kwargs |
+|---|---|---|
+| `getByRole(role, {name, exact})` | `get_by_role` | `args: [role]`, `kwargs: {name, exact}` |
+| `getByLabel(text, {exact})` | `get_by_label` | `args: [text]`, `kwargs: {exact}` |
+| `getByText(text, {exact})` | `get_by_text` | `args: [text]`, `kwargs: {exact}` |
+| `getByTestId(id)` | `get_by_test_id` | `args: [id]` (no `exact` — not supported by this method) |
+| `getByPlaceholder(text, {exact})` | `get_by_placeholder` | `args: [text]`, `kwargs: {exact}` |
+| `getByAltText(text, {exact})` | `get_by_alt_text` | `args: [text]`, `kwargs: {exact}` |
+| `getByTitle(text, {exact})` | `get_by_title` | `args: [text]`, `kwargs: {exact}` |
+| `locator(cssOrXPath)` | `locator` | `args: [cssOrXPath]` |
+| `.filter({hasText, has, hasNot, hasNotText})` | `filter` | `kwargs: {has_text, has, has_not, has_not_text}` — `has`/`has_not` may be a nested `{"steps": [...]}` |
+| `.and(x)` | `and_` | `args: [x as nested {"steps": [...]}]` |
+| `.or(x)` | `or_` | `args: [x as nested {"steps": [...]}]` |
+| `.nth(n)` | `nth` | `args: [n]` |
+| `.first` | `first` | no args (it's a property, not a call) |
+| `.last` | `last` | no args (property) |
+| `.frameLocator(selector)` | `frame_locator` | `args: [selector]` |
+| `.contentFrame()` | `content_frame` | no args (property) |
+
+Example — the OTP-style case that motivated this: `page.getByRole('textbox', { name: 'Enter 6-digit OTP' })` becomes
+`{"steps": [{"method": "get_by_role", "args": ["textbox"], "kwargs": {"name": "Enter 6-digit OTP"}}]}` — Playwright resolves the real accessible name at test-run time (via the label, `aria-label`, or whatever the actual DOM uses), so there's nothing to guess or get wrong here.
+
+**If a locator doesn't map onto this table at all** (e.g. a recording using raw `page.evaluate(...)` custom JS, or a locator string that's genuinely just descriptive text with no real Playwright call behind it) — fall back to a plain CSS/XPath guess as before, and flag it clearly: `<!-- LOCATOR-UNVERIFIED: no direct locator-spec equivalent, derived from recording text only -->`. This should now be rare — everything else above transcribes deterministically.
 
 **Naming convention** — `snake_case` + type suffix:
 
@@ -290,17 +324,17 @@ For each line, understand the intent: what element is being interacted with, wha
 
 ```
 Recording Map:
-  el:email_textbox           → playwright: page.getByRole('textbox', {name:'email@example.com'}) | css: [placeholder="email@example.com"] | +Ve: testuser@yopmail.com
-  el:sign_in_button          → playwright: page.getByRole('button', {name:'Sign In'})             | css: button:has-text("Sign In")
-  el:salutation_dropdown     → playwright: page.getByRole('button', {name:'Select salutation'})   | css: button:has-text("Select salutation")
-  el:mr_option               → playwright: page.getByText('Mr.')                                  | css: :text("Mr.")
-  el:state_dropdown          → playwright: page.getByRole('button', {name:'Select state',exact:true}) | css: button:text-is("Select state")
-  el:andhra_pradesh_option   → playwright: page.getByText('Andhra Pradesh')                       | css: :text("Andhra Pradesh")
-  el:client_name_heading     → playwright: page.locator('h1')                                     | css: h1 | expected text: "Test User" <!-- POST-SUBMIT -->
-  el:email_error_label       → playwright: page.getByText('Email is required')                    | error: "Email is required"
+  el:email_textbox           → playwright: page.getByRole('textbox', {name:'email@example.com'}) | locator_spec: {"steps":[{"method":"get_by_role","args":["textbox"],"kwargs":{"name":"email@example.com"}}]} | +Ve: testuser@yopmail.com
+  el:sign_in_button          → playwright: page.getByRole('button', {name:'Sign In'})             | locator_spec: {"steps":[{"method":"get_by_role","args":["button"],"kwargs":{"name":"Sign In"}}]}
+  el:salutation_dropdown     → playwright: page.getByRole('button', {name:'Select salutation'})   | locator_spec: {"steps":[{"method":"get_by_role","args":["button"],"kwargs":{"name":"Select salutation"}}]}
+  el:mr_option               → playwright: page.getByText('Mr.')                                  | locator_spec: {"steps":[{"method":"get_by_text","args":["Mr."]}]}
+  el:state_dropdown          → playwright: page.getByRole('button', {name:'Select state',exact:true}) | locator_spec: {"steps":[{"method":"get_by_role","args":["button"],"kwargs":{"name":"Select state","exact":true}}]}
+  el:andhra_pradesh_option   → playwright: page.getByText('Andhra Pradesh')                       | locator_spec: {"steps":[{"method":"get_by_text","args":["Andhra Pradesh"]}]}
+  el:client_name_heading     → playwright: page.locator('h1')                                     | locator_spec: {"steps":[{"method":"locator","args":["h1"]}]} | expected text: "Test User" <!-- POST-SUBMIT -->
+  el:email_error_label       → playwright: page.getByText('Email is required')                    | locator_spec: {"steps":[{"method":"get_by_text","args":["Email is required"]}]} | error: "Email is required"
 ```
 
-Write as `<!-- RECORDING-MAP -->` block at the top of each generated `test-cases-*.md`. Phase 2 reads this — no browser launch needed.
+The `playwright:` column stays for human/LLM readability and debugging; `locator_spec:` is the value that actually gets stored (see `skills/push-to-autopilot/SKILL.md` for how it lands in the `elements` payload). Write as `<!-- RECORDING-MAP -->` block at the top of each generated `test-cases-*.md`. Phase 2 reads this — no browser launch needed; a `locator_spec` transcribed here is already final and needs no further resolution.
 
 ---
 
@@ -349,6 +383,8 @@ Each subagent operates independently. After all subagents complete, collect the 
 ---
 
 **Before writing test cases, identify reusable flows (utils).** If a setup, teardown, or action flow appears as a precondition or repeated step in 2+ test cases, extract it as a util. Check Step 2b results first — use existing util UUIDs where available.
+
+**A util's own Autopilot Steps must never contain `execute util "<uuid>"`.** Nested/chained util calls are not supported by the autopilot backend — `execute util` is valid only inside a test case's steps. If one util's flow logically needs another util's steps (e.g. a "create order" util that would otherwise want to call a "login" util first), inline those steps directly into the util instead of referencing the other util by UUID. Keep this in mind when both extracting utils and writing their Autopilot Steps.
 
 For each new util, write a `UTIL-NNN` section at the top of the markdown file:
 
@@ -468,6 +504,12 @@ Phase 3 (`/push-to-autopilot`) builds each test case's `elements` payload only f
 | Element | Playwright Locator | CSS Selector | XPath |
 |---------|--------------------|--------------|-------|
 | [name]  | —                  | —            | —     |
+
+For a recording-sourced element with a `locator_spec` (see Branch R), put that JSON text in
+**both** the CSS Selector and XPath columns. `css_selector` is the field the backend actually
+treats as authoritative (confirmed against `agentic_ai_be`'s persistence code — see
+`skills/push-to-autopilot/SKILL.md`); `xpath` is written too as a harmless fallback. Do not split
+a `locator_spec` across the two columns or otherwise alter it.
 
 ### API Details *(only for api test_mode)*
 **Endpoint:** METHOD /path

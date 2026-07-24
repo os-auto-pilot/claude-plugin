@@ -73,6 +73,7 @@ Utils are reusable test flows (login, logout, create user, etc.) that can be cal
 - A util is identified when a setup/teardown flow appears in 2+ test cases
 - Utils are always referenced in test case steps by **UUID**, never by name: `execute util "3fa85f64-..."`
 - Utils are created via the `save_claude_utils` MCP tool **before** `save_claude_test_cases`
+- **A util can never call another util.** `execute util "<uuid>"` is only valid inside a test case's own steps — never inside a UTIL-NNN section's own Autopilot Steps. Nested/chained util calls are not supported by the autopilot backend. If a util's flow would otherwise need another util's steps, inline those steps directly in the util instead of referencing it.
 - Utils have their own test data. A test case can optionally override util test data using: `<field>_i<N>_<util-uuid>` where N = invocation number (1 = first call, 2 = second call). Override is not mandatory.
 - Before creating new utils, always call `fetch_util_details` to check if an existing util can be reused
 
