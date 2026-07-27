@@ -73,7 +73,20 @@ You need for every push call:
 ## Step 3 — Push using save_claude_test_cases
 
 Call `save_claude_test_cases` once per module+feature group. This endpoint does
-**no LLM re-analysis** — it uses exactly what Claude wrote.
+**no LLM re-analysis** — it uses exactly what Claude wrote, in exactly the order
+the `steps` array is sent. The backend does not reorder, sort, or otherwise
+rearrange steps — whatever order you send is the order the run executes in.
+
+**Steps must be copied into the `steps` array in the exact line order they
+appear in the markdown's `### Autopilot Steps` fenced block — never reordered,
+regrouped, or moved for any reason.** This applies especially to `execute
+util` calls: a cleanup util at the *end* of the block (e.g. deleting a record
+created earlier in the same test case) must stay last in the `steps` array,
+even though it might be tempting to move it next to other `execute util`
+calls or "setup"-looking lines. Moving a cleanup-util call earlier than the
+action it's meant to clean up after silently breaks the test — e.g. deleting
+an element before it's even created. Copy the fenced block top-to-bottom,
+line for line, with no reasoning about what "should" come first.
 
 Build the `test_cases` array from the markdown file. Each item:
 ```json
