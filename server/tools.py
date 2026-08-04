@@ -1304,6 +1304,46 @@ async def create_element(input: ElementCreationInput) -> ElementCreationOutput:
         )
 
 
+@mcp.tool("upload_datafile")
+async def upload_datafile(input: UploadDataFileInput) -> DataFileUploadOutput:
+    """
+    Upload a CSV data file to the platform's data-files store (datafiles/v1/upload).
+
+    Use this after generating and validating a CSV — see the /create-datafile skill.
+    The returned `id` is what goes into a test case's `file_ids` list so the test case
+    can reference the file's columns via {{data.<file>.<column>}} placeholders in its
+    steps (e.g. performance test cases created via /performance-testing).
+
+    Args:
+        input (UploadDataFileInput): file_path (local CSV to upload), file_name
+            (<=20 chars, server-enforced), project_id (falls back to plugin default),
+            uploaded_by (plain display name, never email/UUID — same convention as
+            save_claude_test_cases' created_by).
+
+    Returns:
+        DataFileUploadOutput: the created file's id, fileName, fileSize, and other metadata.
+    """
+    if not os.path.isfile(input.file_path):
+        raise ValueError(f"CSV file not found at {input.file_path}")
+    with open(input.file_path, "rb") as fh:
+        content = fh.read()
+
+    data = {
+        "projectId": _project(input.project_id),
+        "fileName": input.file_name,
+        # Field name follows the Java DTO's literal casing (DataFilesDto.UploadedBy) —
+        # confirmed correct against a real upload to a live dev backend.
+        "UploadedBy": input.uploaded_by,
+        "needToUpdate": str(input.need_to_update).lower(),
+    }
+    files = {"file": (os.path.basename(input.file_path), content, "text/csv")}
+
+    resp = await client.post_backend_multipart("/datafiles/v1/upload", data, files)
+    if resp["status_code"] != 200:
+        raise Exception(f"Failed to upload data file: {resp['data']}")
+    return DataFileUploadOutput(**resp["data"])
+
+
 @mcp.tool()
 async def fetch_element_details_by_id(element_ids: list[str]) -> list[dict[str, Any]]:
     """Fetch UI element details for one or more element IDs in parallel.

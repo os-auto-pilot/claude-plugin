@@ -1039,6 +1039,15 @@ class ClaudeTestCaseInput(BaseModel):
     test_data: List[TestDataEntry] = Field(
         default_factory=list, description="List of test data entries for the test case"
     )
+    file_ids: List[str] = Field(
+        default_factory=list,
+        description=(
+            "IDs of uploaded CSV data files this test case references (from "
+            "upload_datafile). Empty for non-CSV-driven test cases. Requires a "
+            "matching field on the backend's zero-LLM test-case model — see "
+            "docs/backend-performance-test-fileids.md."
+        ),
+    )
 
 
 class CreateTestCaseFromClaudeRequest(BaseModel):
@@ -1047,8 +1056,8 @@ class CreateTestCaseFromClaudeRequest(BaseModel):
     test_cases: List[ClaudeTestCaseInput]
     module: str = Field(..., description="Module name for the test cases")
     feature: uuid.UUID = Field(..., description="Feature ID for the test cases")
-    test_mode: Literal["Web", "API", "Mobile"] = Field(
-        ..., description="Test mode, e.g., 'Web', 'API', 'Mobile'"
+    test_mode: Literal["Web", "API", "Mobile", "Performance"] = Field(
+        ..., description="Test mode, e.g., 'Web', 'API', 'Mobile', 'Performance'"
     )
     project_id: Optional[uuid.UUID] = Field(
         None, description="Project ID for the test cases"
@@ -1067,6 +1076,55 @@ class CreateTestCaseFromClaudeRequest(BaseModel):
     )
     env_id: str = Field(default="", description="Environment ID for the test cases")
     apk_id: str = Field(default="", description="APK ID for the test cases")
+
+
+class UploadDataFileInput(BaseModel):
+    """Input for uploading a CSV data file to the platform's data-files store (/create-datafile)."""
+
+    file_path: str = Field(
+        ...,
+        description="Local filesystem path to the CSV file to upload — already generated and validated",
+    )
+    file_name: str = Field(
+        ...,
+        max_length=20,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description=(
+            "Bare identifier to register the file under — NO extension and NO characters "
+            "other than letters/numbers/underscore/hyphen (server-validated: this exact "
+            "string is the <name> token in {{data.<name>.<column>}} placeholders, which "
+            "can't contain a '.'). HARD LIMIT: 20 characters. E.g. 'ord_load1' (9 chars), "
+            "not 'ord_load1.csv'."
+        ),
+    )
+    project_id: Optional[uuid.UUID] = Field(
+        None, description="Project ID for the upload. Falls back to plugin default when omitted."
+    )
+    uploaded_by: str = Field(
+        ...,
+        max_length=40,
+        description="Plain human display name of the uploader (empName) — same convention as save_claude_test_cases' created_by. Never an email or UUID.",
+    )
+    need_to_update: bool = Field(
+        default=False,
+        description="Set true only when replacing/updating a previously uploaded file with the same identity",
+    )
+
+
+class DataFileUploadOutput(BaseModel):
+    """Response from uploading a data file — id is what goes into a test case's file_ids."""
+
+    id: uuid.UUID = Field(..., description="File ID — use this in a test case's file_ids list")
+    projectId: Optional[uuid.UUID] = Field(None, description="Project the file belongs to")
+    uniqueKey: Optional[str] = Field(None, description="Unique key of the uploaded file")
+    fileName: Optional[str] = Field(None, description="Registered file name")
+    filePath: Optional[str] = Field(None, description="Server-assigned storage path")
+    fileSize: Optional[int] = Field(None, description="File size in bytes")
+    uploadedBy: Optional[str] = Field(None, description="Display name of the uploader")
+    fileOriginalName: Optional[str] = Field(None, description="Original filename from the multipart upload")
+    extension: Optional[str] = Field(None, description="File extension")
+    createdAt: Optional[str] = Field(None, description="Creation timestamp")
+    needToUpdate: Optional[bool] = Field(None, description="Whether this file is flagged for update")
 
 
 class GetDefectOrTaskDetailsByNameOrUniqueKeyInput(BaseModel):

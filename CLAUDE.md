@@ -66,6 +66,21 @@ The core workflow for generating test cases is:
 | 2 | `element-discoverer` agent | Enrich markdown with real element locators (Playwright or codebase grep) |
 | 3 | `/push-to-autopilot` | Read enriched markdown → call `save_claude_utils` then `save_claude_test_cases` |
 
+## Performance Test Case Workflow
+
+A separate, standalone workflow — not part of the three-phase pipeline above (no `el:` elements,
+no Phase 2 discovery):
+
+| Step | Skill/Tool | What happens |
+|---|---|---|
+| 1 (only if CSV-driven) | `/create-datafile` | Generate + validate a CSV, upload via `upload_datafile` → returns a file `id` |
+| 2 | `/performance-testing` | Author load-test steps from a Swagger doc (single endpoint, or multi-endpoint flow with correlation) |
+| 3 | `save_claude_test_cases` | Push with `test_mode="Performance"`, `file_ids` set when a CSV was created |
+
+Claude authors all performance-test content itself — this workflow never calls the platform's
+separate AI-driven performance-test-generation endpoint. `/create-datafile` is also usable
+standalone, independent of performance test cases.
+
 ## Utils (Reusable Test Components)
 
 Utils are reusable test flows (login, logout, create user, etc.) that can be called from multiple test cases. Key rules:
@@ -109,6 +124,9 @@ password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 = AdminPass@1
 | `agents/element-discoverer.md` | Phase 2 — enrich markdown with real locators |
 | `agents/failure-analyst.md` | Deep failure triage (delegated, not inline) |
 | `docs/backend-utils-create-from-claude.md` | Backend implementation spec for the util creation endpoint |
+| `skills/create-datafile/SKILL.md` | Generate + upload a CSV data file (standalone) |
+| `skills/performance-testing/SKILL.md` | Author performance/load test cases, zero-LLM push |
+| `docs/backend-performance-test-fileids.md` | Backend implementation spec for attaching CSV files to zero-LLM test cases |
 
 ## MCP Tool Reference (most-used)
 
@@ -121,7 +139,10 @@ password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 = AdminPass@1
 | `fetch_test_run_results` | Get all results for a completed run |
 | `fetch_test_run_failure_details` | Get stack traces for failed cases |
 | `get_feature_id_by_name_or_unique_key` | Resolve feature UUID — needed before pushing test cases or utils |
+| `upload_datafile` | Upload a CSV data file to `datafiles/v1/upload`; returns the file `id` used in a test case's `file_ids` |
 
 ## Pending Backend Work
 
 `POST /api/utils/create-from-claude` needs to be implemented on the Platform API (`agentic_ai_be`). The full spec is in `docs/backend-utils-create-from-claude.md`. Until this endpoint exists, `save_claude_utils` will return a 404/500 — the rest of the plugin is complete.
+
+~~`ClaudeTestCaseInput.file_ids` backend gap~~ — **RESOLVED (2026-08-04).** The matching `file_ids` field was added to the Platform API's zero-LLM test-case model, and forwarded into the downstream `SingleTestCase.fileIds` — see `docs/backend-performance-test-fileids.md` for the applied change and live verification. The performance-testing workflow (upload, `test_mode="Performance"`, the full DSL, `file_ids` attachment) is now confirmed working end-to-end against a real dev instance.

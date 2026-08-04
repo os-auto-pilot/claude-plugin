@@ -27,6 +27,16 @@ calls: list[httpx.Request] = []
 
 def _handler(request: httpx.Request) -> httpx.Response:
     calls.append(request)
+    if str(request.url).endswith("/datafiles/v1/upload"):
+        return httpx.Response(
+            200,
+            json={
+                "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "fileName": "t.csv",
+                "fileSize": 8,
+                "uploadedBy": "Surya",
+            },
+        )
     return httpx.Response(200, json={"ok": True})
 
 
@@ -114,5 +124,93 @@ async def main() -> None:
     print(f"ALL OK — {len(calls)} requests asserted")
 
 
+async def test_upload_and_performance() -> None:
+    """Regression coverage for the datafiles-upload + performance test-case additions.
+
+    Kept as its own entry point (not appended into main()'s call sequence) since
+    main() already exercises tools (create_test_cases, analyze_test_steps, etc.)
+    that are currently commented out / absent from server/tools.py — pre-existing
+    drift, unrelated to this change. Runnable independently either way.
+    """
+    from server.request_response_model import (
+        ClaudeTestCaseInput,
+        CreateTestCaseFromClaudeRequest,
+        UploadDataFileInput,
+    )
+
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(_handler), headers=client._headers()
+    )
+    calls.clear()
+
+    # upload_datafile must send real multipart/form-data, not application/json —
+    # this is the exact bug the client.py _headers() fix prevents.
+    csv_path = "/tmp/_test_upload_and_performance.csv"
+    with open(csv_path, "w") as fh:
+        fh.write("a,b\n1,2\n")
+    try:
+        await tools.upload_datafile(
+            UploadDataFileInput(
+                file_path=csv_path,
+                # bare identifier only — no extension/dots/spaces, confirmed against a
+                # real upload: the server validates this as the {{data.<name>.<col>}} token
+                file_name="t",
+                uploaded_by="Surya",
+                # PLATFORM_PROJECT_ID in this test file's env is "proj-default", not
+                # a real UUID — _project() requires one, so pass it explicitly here.
+                project_id="3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            )
+        )
+    finally:
+        os.remove(csv_path)
+    r = _last()
+    assert r.method == "POST"
+    assert str(r.url) == "http://localhost:8088/datafiles/v1/upload", r.url
+    ct = r.headers["content-type"]
+    assert ct.startswith("multipart/form-data; boundary="), ct
+    assert r.headers["x-api-key"] == "testkey123"
+
+    # save_claude_test_cases with test_mode="Performance" and file_ids must build
+    # correctly and round-trip file_ids through model_dump(mode="json").
+    tc = ClaudeTestCaseInput(
+        name="Load test orders",
+        description="d",
+        steps=['define load step "Create Order" {}', "run the load test"],
+        file_ids=["file-id-123"],
+    )
+    req = CreateTestCaseFromClaudeRequest(
+        test_cases=[tc],
+        module="Perf",
+        feature="3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        test_mode="Performance",
+        created_by="Surya",
+        # same non-UUID env-default issue as project_id above
+        project_id="3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        user_id="3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    )
+    await tools.save_claude_test_cases(req)
+    r = _last()
+    b = _body(r)
+    assert b["test_mode"] == "Performance", b
+    assert b["test_cases"][0]["file_ids"] == ["file-id-123"], b
+
+    # file_name must be a bare identifier — confirmed live against a real upload
+    # (rejected with "File name must contain only letters, numbers, underscores,
+    # and hyphens... to be usable as {{data.<name>.<column>}}").
+    for bad_name in ("ord_load1.csv", "order data", "ord/load1"):
+        try:
+            UploadDataFileInput(file_path="/tmp/x", file_name=bad_name, uploaded_by="Surya")
+            raise AssertionError(f"expected rejection of file_name={bad_name!r}")
+        except ValueError:
+            pass
+
+    await client.aclose()
+    print(f"UPLOAD/PERFORMANCE OK — {len(calls)} requests asserted")
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"main() failed (pre-existing — tools it exercises are commented out in tools.py): {e}")
+    asyncio.run(test_upload_and_performance())

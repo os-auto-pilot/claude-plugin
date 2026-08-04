@@ -64,7 +64,12 @@ _client: httpx.AsyncClient | None = None
 
 
 def _headers() -> dict[str, str]:
-    headers = {"Content-Type": "application/json"}
+    # Deliberately no default Content-Type here. Every JSON call below passes
+    # json=payload, which makes httpx set "application/json" itself regardless
+    # of client defaults; a hardcoded default would instead force every
+    # multipart call (post_backend_multipart) to go out mislabeled as
+    # application/json, since a client-level header can't be unset per-request.
+    headers: dict[str, str] = {}
     if API_KEY:
         headers["x-api-key"] = API_KEY
     return headers
@@ -106,6 +111,19 @@ async def get_platform(path: str, params: dict[str, Any] | None = None) -> dict[
 
 async def post_backend(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     resp = await get_client().post(f"{BACKEND_URL}{path}", json=payload)
+    return _result(resp)
+
+
+async def post_backend_multipart(
+    path: str, data: dict[str, Any], files: dict[str, tuple[str, bytes, str]]
+) -> dict[str, Any]:
+    """POST multipart/form-data to the backend (e.g. datafiles/v1/upload).
+
+    `files` values are (filename, content_bytes, content_type) tuples. Uses
+    data=/files= (never json=) so httpx computes its own multipart boundary —
+    see _headers() for why the shared client carries no default Content-Type.
+    """
+    resp = await get_client().post(f"{BACKEND_URL}{path}", data=data, files=files)
     return _result(resp)
 
 async def get_backend(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
