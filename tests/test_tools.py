@@ -208,9 +208,100 @@ async def test_upload_and_performance() -> None:
     print(f"UPLOAD/PERFORMANCE OK — {len(calls)} requests asserted")
 
 
+async def test_run_test_case_load_profile() -> None:
+    """Regression coverage for the Performance load profile on run_test_case.
+
+    Three bugs shipped together here and none were caught, because nothing
+    asserted the outgoing payload: the field was named `virtualUser` while the
+    backend DTO says `virtualUsers` (Jackson drops unknown fields silently), the
+    profile was never added to the payload at all, and the client-side defaults
+    disagreed with the backend's. The payload assertions below are the guard.
+    """
+    import uuid
+
+    import pydantic
+
+    from server.request_response_model import (
+        AUTOPILOT_PORTAL_URL,
+        MAX_VIRTUAL_USERS,
+        RunTestCaseInput,
+    )
+
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(_handler), headers=client._headers()
+    )
+    calls.clear()
+
+    tc, uid, env = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    def _mk(**kw) -> RunTestCaseInput:
+        return RunTestCaseInput(testCaseId=tc, userId=uid, envId=env, **kw)
+
+    # --- duration: accepted forms, both grammars the backend allows -----------
+    for value in ("30s", "2m", "180", "3m"):
+        assert _mk(duration=value).duration == value
+
+    # --- duration: over this plugin's 3-minute cap, in every equivalent form --
+    for value in ("4m", "181", "1h"):
+        try:
+            _mk(duration=value)
+            raise AssertionError(f"expected {value!r} to exceed the duration cap")
+        except pydantic.ValidationError as exc:
+            # The portal is the whole point of the cap — a rejection that doesn't
+            # say where to go instead is a dead end for the user.
+            assert AUTOPILOT_PORTAL_URL in str(exc), f"{value}: no portal URL in {exc}"
+
+    # --- duration: malformed, rejected on grammar rather than the cap ---------
+    for value in ("abc", "0s", "-1m", "2x"):
+        try:
+            _mk(duration=value)
+            raise AssertionError(f"expected {value!r} to be rejected as malformed")
+        except pydantic.ValidationError:
+            pass
+
+    # --- rampPattern: the backend lower-cases these, so any casing is fine ----
+    assert _mk(rampPattern="Linear").rampPattern == "linear"
+    assert _mk(rampPattern="WAVED").rampPattern == "waved"
+    assert _mk(rampPattern="incremental").rampPattern == "incremental"
+
+    # --- virtualUsers: bounds mirror LoadProfileValidator ---------------------
+    assert _mk(virtualUsers=MAX_VIRTUAL_USERS).virtualUsers == MAX_VIRTUAL_USERS
+    for value in (0, MAX_VIRTUAL_USERS + 1):
+        try:
+            _mk(virtualUsers=value)
+            raise AssertionError(f"expected virtualUsers={value} to be rejected")
+        except pydantic.ValidationError:
+            pass
+
+    # --- payload: a Performance run sends the profile under the backend's own
+    #     field names. `virtualUsers` plural is the bug this pins down.
+    await tools.run_test_case(_mk(virtualUsers=250, duration="2m", rampPattern="Waved"))
+    body = _body(_last())
+    assert body["virtualUsers"] == 250, body
+    assert "virtualUser" not in body, f"singular field name would be dropped silently: {body}"
+    assert body["duration"] == "2m", body
+    assert body["rampPattern"] == "waved", body
+
+    # --- payload: with no profile given, the three keys are absent entirely so
+    #     LoadProfileValidator stays the single owner of the defaults.
+    await tools.run_test_case(_mk())
+    body = _body(_last())
+    assert set(body) == {"testCaseId", "browserType", "envId", "platform", "userId"}, body
+
+    # --- payload: a partial profile sends only what was chosen ---------------
+    await tools.run_test_case(_mk(virtualUsers=5))
+    body = _body(_last())
+    assert body["virtualUsers"] == 5, body
+    assert "duration" not in body and "rampPattern" not in body, body
+
+    await client.aclose()
+    print(f"LOAD PROFILE OK — {len(calls)} requests asserted")
+
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as e:
         print(f"main() failed (pre-existing — tools it exercises are commented out in tools.py): {e}")
     asyncio.run(test_upload_and_performance())
+    asyncio.run(test_run_test_case_load_profile())
