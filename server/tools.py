@@ -1187,6 +1187,17 @@ async def run_test_case(input: RunTestCaseInput) -> str:
         "platform": input.platform,
         "userId": str(input.userId),
     }
+    # Load profile for Performance test cases. Field names must match the backend's
+    # TestCaseRunDto exactly — note virtualUser*s*; anything else is silently ignored
+    # by Jackson and the run quietly falls back to defaults. Only send what was
+    # actually specified, so LoadProfileValidator applies its own defaults otherwise.
+    load_profile = {
+        "virtualUsers": input.virtualUsers,
+        "duration": input.duration,
+        "rampPattern": input.rampPattern,
+    }
+    payload.update({k: v for k, v in load_profile.items() if v is not None})
+
     resp = await client.post_backend(
         f"/testcases/v1/run-test-case",
         payload,
