@@ -119,7 +119,8 @@ password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 = AdminPass@1
 | `server/client.py` | Thin HTTP client (no business logic) |
 | `skills/analyze-requirements/SKILL.md` | Phase 1 skill — requirement analysis + util/test case generation |
 | `skills/push-to-autopilot/SKILL.md` | Phase 3 skill — push markdown to backend |
-| `skills/run-tests/SKILL.md` | Run test cases or test runs |
+| `skills/run-tests/SKILL.md` | Run test cases or test runs (incl. Performance load profile) |
+| `skills/schedule-test-run/SKILL.md` | Schedule an existing test run for a future date/time + environment |
 | `skills/analyze-run/SKILL.md` | Failure analysis workflow |
 | `agents/element-discoverer.md` | Phase 2 — enrich markdown with real locators |
 | `agents/failure-analyst.md` | Deep failure triage (delegated, not inline) |
@@ -140,6 +141,26 @@ password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 = AdminPass@1
 | `fetch_test_run_failure_details` | Get stack traces for failed cases |
 | `get_feature_id_by_name_or_unique_key` | Resolve feature UUID — needed before pushing test cases or utils |
 | `upload_datafile` | Upload a CSV data file to `datafiles/v1/upload`; returns the file `id` used in a test case's `file_ids` |
+| `run_test_case` | Start one test case; carries the load profile for Performance cases |
+| `get_environments_assigned_to_user` | List a user's environments — the source for any environment prompt |
+| `schedule_test_run` | Set an existing test run to execute later; `environment` is a **name**, not a UUID |
+
+## Performance Run Profile
+
+Virtual users, ramp pattern, and duration are **run-time config**, never authored into
+steps (see `skills/performance-testing/SKILL.md`). Defaults live in the backend's
+`LoadProfileValidator` and are applied there when a field is omitted — **100** VUs,
+**linear**, **1m**. Send only what the user explicitly chose so those defaults stay the
+single source of truth.
+
+Field names on the wire must match the backend's `TestCaseRunDto` exactly —
+`virtualUsers` (plural), `duration`, `rampPattern`. A misspelled field is dropped
+silently by Jackson and the run falls back to defaults with no error, so a "why did it
+run with 100 users?" bug looks like a backend problem when it's a typo.
+
+Duration from this plugin is capped at **3 minutes**; longer runs belong on
+https://www.osautopilot.com. `RunTestCaseInput` enforces the cap, but `run-tests` should
+catch it first so the user gets an explanation instead of a validation error.
 
 ## Pending Backend Work
 
