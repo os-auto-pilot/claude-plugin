@@ -1232,13 +1232,13 @@ async def schedule_test_run(input: ScheduleTestRunInput) -> str:
     # we will reuse existing run confiuration details and only update the fields required for scheduling the run
     payload = {
         "id": run_config.get("id"),
-        "userId": input.userID,
+        "userId": str(input.userID),
         "testRunId": run_config.get("testRunId"),
         "userName": input.userName,
         "userTimezone": input.userTimezone,
         "apkName": "",
         "envName": input.environment,
-        "envId": input.envID,
+        "envId": str(input.envID),
         "existingApkName": "",
         "existingEnvName": "",
         "scheduleExecution": True,
