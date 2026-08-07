@@ -22,7 +22,7 @@ ALLOWED_DEFECT_STATUSES = {
     "Won't Fix",
     "UnAssigned",
 }
-ALLOWED_TEST_MODES = {"Web", "API", "Mobile"}
+ALLOWED_TEST_MODES = {"Web", "API", "Mobile", "Performance"}
 ALLOWED_TEST_TYPES = {"Automation", "Manual", "AI Automated", "AI Draft"}
 ALLOWED_SEVERITIES = {"Minor", "Major", "Blocker", "Critical"}
 ALLOWED_TEST_RUN_STATUSES = {
@@ -379,7 +379,7 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
     )
     testMode: Optional[str] = Field(
         None,
-        description="Test mode filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Web', 'Api', or 'Mobile'.",
+        description="Test mode filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Web', 'Api', 'Mobile', or 'Performance'.",
     )
     testType: Optional[str] = Field(
         None,
@@ -622,7 +622,7 @@ class GetTestCasesWithFiltersInAProjectInput(BaseModel):
     )
     testMode: Optional[str] = Field(
         None,
-        description="Test mode to filter test cases, accepting only 'Web', 'API', or 'Mobile' or combination of these in comma separated format (e.g. Web,Api) to filter test cases belonging to any of the provided test modes",
+        description="Test mode to filter test cases, accepting only 'Web', 'API', 'Mobile', or 'Performance' or combination of these in comma separated format (e.g. Web,Api) to filter test cases belonging to any of the provided test modes",
     )
     author: Optional[str] = Field(
         None, description="Name of the author to filter test cases by author name"
@@ -651,7 +651,7 @@ class GetTestCasesWithFiltersInAProjectInput(BaseModel):
         if normalized is None:
             return None
 
-        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile"}
+        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile", "performance": "Performance"}
         converted: list[str] = []
         invalid: list[str] = []
 
@@ -741,7 +741,7 @@ class GetTestCasesWithFiltersInAProjectOutput(BaseModel):
     testType: Literal["Automation", "Manual", "AI Automated", "AI Draft"] = Field(
         ..., description="Test type of the test case"
     )
-    testMode: Literal["Web", "API", "Mobile"] = Field(
+    testMode: Literal["Web", "API", "Mobile", "Performance"] = Field(
         ..., description="Test mode of the test case"
     )
     author: str = Field(..., description="Author of the test case")
@@ -784,6 +784,18 @@ class RunTestCaseInput(BaseModel):
         "server,server",
         description="Platform in which to execute the test case, either in server or local. For server 'server, server' and for local 'local, machineId'",
     )
+    virtualUser: Optional[int] = Field(
+        10,
+        description="Number of virtual users to simulate for the test case. Only for performance testing",
+    )
+    rampPattern: Optional[Literal["Linear", "Incremental", "Waved"]] = Field(
+        "Linear",
+        description="Ramp pattern for the test case, either 'Linear', 'Incremental', or 'Waved'. Only for performance testing",
+    )
+    duration: Optional[str] = Field(
+        "1m",
+        description="Duration of the test case in minutes. Only for performance testing Examples: '1m', '2m', '30m'",
+    )
 
 
 class ScheduleTestRunInput(BaseModel):
@@ -807,6 +819,10 @@ class ScheduleTestRunInput(BaseModel):
     userTimezone: str = Field(
         ...,
         description="Timezone of the user scheduling the test run, in IANA format (e.g. 'America/New_York')",
+    )
+    environment: Optional[str] = Field(
+        None,
+        description="Environment in which to run the test (e.g. 'staging', 'production')",
     )
 
 
@@ -999,7 +1015,7 @@ class TestDataEntry(BaseModel):
 
 
 class ClaudeElement(BaseModel):
-    """An element provided by Claude with real locators (Phase 2 output)."""
+    """An element with real locators, supplied by the agent (Phase 2 output)."""
 
     name: str = Field(
         ..., description="Name of the element, e.g., 'email_textbox' — no el: prefix"
@@ -1013,7 +1029,7 @@ class ClaudeElement(BaseModel):
 
 
 class ClaudeTestCaseInput(BaseModel):
-    """A single test case authored by Claude in Phase 1/2."""
+    """A single test case authored by the agent in Phase 1/2."""
 
     name: str = Field(
         ..., description="Name of the test case, e.g., 'Login with valid credentials'"
@@ -1051,7 +1067,11 @@ class ClaudeTestCaseInput(BaseModel):
 
 
 class CreateTestCaseFromClaudeRequest(BaseModel):
-    """Batch request from the Claude plugin — no LLM re-analysis needed."""
+    """Batch request from the plugin — no server-side LLM re-analysis needed.
+
+    The `Claude` in this class name mirrors the backend route it maps to
+    (`/create-from-claude`); it is a wire-contract name, not a host reference.
+    """
 
     test_cases: List[ClaudeTestCaseInput]
     module: str = Field(..., description="Module name for the test cases")
@@ -1312,7 +1332,7 @@ class GetUtilsWithFiltersInput(BaseModel):
         normalized = _normalize_csv_filter(value)
         if normalized is None:
             return None
-        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile"}
+        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile", "performance": "Performance"}
         converted: list[str] = []
         invalid: list[str] = []
         for item in normalized.split(","):
@@ -1383,7 +1403,7 @@ class ClaudeUtilInput(BaseModel):
     """Input model for creating a new util."""
 
     utilName: str = Field(..., description="Name of the util")
-    testMode: Literal["Web", "API", "Mobile"] = Field(
+    testMode: Literal["Web", "API", "Mobile", "Performance"] = Field(
         ..., description="Test mode for the util"
     )
     testData: List[TestDataEntry] = Field(
@@ -1404,7 +1424,7 @@ class ClaudeUtilInput(BaseModel):
 
 
 class CreateUtilFromClaudeRequest(BaseModel):
-    """Batch request for creating utils from a Claude request — no LLM re-analysis."""
+    """Batch request for creating agent-authored utils — no LLM re-analysis."""
 
     utils: List[ClaudeUtilInput] = Field(..., description="List of utils to create")
     module: str = Field(..., description="Module name for the utils")

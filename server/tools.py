@@ -1217,6 +1217,11 @@ async def schedule_test_run(input: ScheduleTestRunInput) -> str:
     if resp["status_code"] != 200:
         raise Exception(f"Failed to retrieve test run configuration: {resp['data']}")
     run_config = resp["data"]
+    # Fetch environment name by environemnt Id
+    env_resp = await client.get_backend(f"/servers/v1/get-server/{run_config.get('envId')}")
+    if env_resp["status_code"] != 200:
+        raise Exception(f"Failed to retrieve environment: {env_resp['data']}")
+    env_name = env_resp["data"].get("serverName")
     # update the run configuration with scheduling details
     # we will reuse existing run confiuration details and only update the fields required for scheduling the run
     payload = {
@@ -1226,7 +1231,7 @@ async def schedule_test_run(input: ScheduleTestRunInput) -> str:
         "userName": run_config.get("userName"),
         "userTimezone": input.userTimezone,
         "apkName": run_config.get("apkName"),
-        "envName": run_config.get("envName"),
+        "envName": input.environment if input.environment else env_name,
         "existingApkName": run_config.get("existingApkName"),
         "existingEnvName": run_config.get("existingEnvName"),
         "scheduleExecution": True,
