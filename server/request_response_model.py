@@ -911,9 +911,21 @@ class ScheduleTestRunInput(BaseModel):
         ...,
         description="Timezone of the user scheduling the test run, in IANA format (e.g. 'America/New_York')",
     )
-    environment: Optional[str] = Field(
-        None,
-        description="Environment in which to run the test (e.g. 'staging', 'production')",
+    environment: str = Field(
+        ...,
+        description="Environment Name in which to run the test (e.g. 'staging', 'production')",
+    )
+    envID: uuid.UUID = Field(
+        ...,
+        description="Environment ID in which to run the test",
+    )
+    userID: uuid.UUID = Field(
+        ...,
+        description="User ID of the user scheduling the test run",
+    )
+    userName: str = Field(
+        ...,
+        description="Name of the user scheduling the test run",
     )
 
 

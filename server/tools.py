@@ -1232,20 +1232,22 @@ async def schedule_test_run(input: ScheduleTestRunInput) -> str:
     # we will reuse existing run confiuration details and only update the fields required for scheduling the run
     payload = {
         "id": run_config.get("id"),
-        "userId": run_config.get("userId"),
+        "userId": input.userID,
         "testRunId": run_config.get("testRunId"),
-        "userName": run_config.get("userName"),
+        "userName": input.userName,
         "userTimezone": input.userTimezone,
-        "apkName": run_config.get("apkName"),
+        "apkName": "",
         "envName": input.environment,
-        "existingApkName": run_config.get("existingApkName"),
-        "existingEnvName": run_config.get("existingEnvName"),
+        "envId": input.envID,
+        "existingApkName": "",
+        "existingEnvName": "",
         "scheduleExecution": True,
         "scheduledDate": input.scheduledDate,
         "scheduledTime": input.scheduledTime,
         "autoClone": run_config.get("autoClone"),
         "cloneScheduleTime": run_config.get("cloneScheduleTime"),
         "allowParallelExecution": run_config.get("allowParallelExecution"),
+        "platform": "server,server"
     }
     resp = await client.put_backend(
         f"/runconfig/v1/update",
