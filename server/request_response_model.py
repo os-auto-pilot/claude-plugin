@@ -414,6 +414,9 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
         None,
         description="Severity filter for the test cases to be added or removed from the test run. Supports one or more comma-separated values from 'Minor', 'Major', 'Blocker', or 'Critical'.",
     )
+    isPerformance: bool = Field(
+        ..., description="isPerformance filter for test cases to be performance test cases or not, true means performance test cases"
+    )
 
     @field_validator("nameOrUniqueKey", mode="before")
     @classmethod
@@ -464,7 +467,7 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
         if normalized is None:
             return None
 
-        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile"}
+        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile", "performance": "Performance"}
         converted: list[str] = []
         invalid: list[str] = []
 
@@ -544,6 +547,50 @@ class AddOrRemoveTestCasesFromTestRunInput(BaseModel):
     @classmethod
     def normalize_text_filters_csv(cls, value: Optional[str]) -> Optional[str]:
         return _normalize_csv_filter(value)
+
+class GetTestCasesUUIDByUniqueKeyOutput(BaseModel):
+    """Model representing the output for retrieving test case UUIDs by unique keys in a project"""
+
+    testCaseUUID: uuid.UUID = Field(
+        ...,
+        description="Test case UUID",
+    )
+    testMode: Optional[str] = Field(
+        None,
+        description="Test mode of test case"
+    )
+    uniqueKey: str = Field(
+        ...,
+        description="Unique key of test case"
+    )
+    testType: str = Field(
+        ...,
+        description="Test type of test case"
+    )
+    @field_validator("testMode", mode="before")
+    @classmethod
+    def validate_test_mode_csv(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_csv_filter(value)
+        if normalized is None:
+            return None
+
+        canonical_map = {"web": "Web", "api": "API", "mobile": "Mobile", "performance": "Performance"}
+        converted: list[str] = []
+        invalid: list[str] = []
+
+        for item in normalized.split(","):
+            canonical = canonical_map.get(item.lower())
+            if canonical is None:
+                invalid.append(item)
+            else:
+                converted.append(canonical)
+
+        if invalid:
+            raise ValueError(
+                f"Invalid testMode value(s): {', '.join(invalid)}. Allowed values: {', '.join(sorted(ALLOWED_TEST_MODES))}"
+            )
+
+        return ",".join(converted)
 
 
 class GetTestCasesUUIDByUniqueKeyInput(BaseModel):

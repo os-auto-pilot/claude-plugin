@@ -21,28 +21,32 @@ platform's capabilities as tools:
 
 ## Requirements
 
-- A `python` (3.10+) on PATH — the launcher creates its own venv, so no global
-  installs are needed.
+- [Claude Code CLI](https://code.claude.com/docs/en/install)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (the MCP server runs via `uv run`)
+- Python 3.10+ (auto-installed by `uv` on first run if missing)
 - Running Oniesoft backends reachable from your machine:
   - platform API (`agentic_ai_be`), default `http://localhost:8000`
-  - execution API (`python_tool`), default `http://localhost:3232`
-- A personal **API key** (generate one in the platform: Users → API Keys).
+  - execution backend, default `http://localhost:8088`
+- A personal **API key** (generate one in the platform: Users → API Keys)
 
 ## Install
 
+**Full step-by-step guide:** [docs/INSTALLATION.md](docs/INSTALLATION.md)
+
+**Quick start (inside a Claude Code session):**
+```
+/plugin marketplace add https://bitbucket.org/onie-soft/auto-pilot-claude-plugin.git
+/plugin install auto-pilot@oniesoft
+```
+
+On enable you'll be prompted for your **API key** (stored in the OS keychain or
+`~/.claude/.credentials.json`). Per-project IDs and API URLs go in a
+`config.json` in your project folder — see the [installation guide](docs/INSTALLATION.md#configure-your-project).
+
 **For development (no marketplace):**
 ```bash
-claude --plugin-dir /path/to/oniesoft-test-platform
+claude --plugin-dir /path/to/auto-pilot-claude-plugin
 ```
-
-**Via marketplace:**
-```
-/plugin marketplace add <this-repo-url>
-/plugin install oniesoft-test-platform@oniesoft
-```
-
-On enable you'll be prompted for the platform URL, execution URL, your **API
-key** (stored in the OS keychain), and optional default project/user ids.
 
 ## Auth
 

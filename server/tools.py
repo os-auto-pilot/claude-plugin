@@ -806,7 +806,7 @@ async def add_or_remove_test_cases_from_test_run(
     input: AddOrRemoveTestCasesFromTestRunInput,
 ) -> str:
     """
-    Add or remove test cases from a test run.
+    Add or remove test cases from a test run. Test Cases with AI Draft test type can't be added to a test run.
     We will first filter test cases by the provided criteria and fetch their IDs, then we will add or remove the test cases from the test run based on the action specified in the input (add or remove).
 
     Args:
@@ -841,7 +841,7 @@ async def add_or_remove_test_cases_from_test_run(
     query_terms = _split_csv(input.nameOrUniqueKey)
     unique_key_terms = [term for term in query_terms if _looks_like_unique_key(term)]
     name_terms = [term for term in query_terms if term not in unique_key_terms]
-
+    log = ""
     if unique_key_terms:
         print(f"Resolving unique keys to IDs for: {unique_key_terms}")
         resolved_unique_key_ids = await get_test_cases_uuid_by_unique_keys(
@@ -852,9 +852,31 @@ async def add_or_remove_test_cases_from_test_run(
                 deleted=False,
             )
         )
-        resolved_unique_key_ids_as_str = [
-            str(case_id) for case_id in resolved_unique_key_ids
+        ai_draft_case_keys = [
+            case_id.uniqueKey for case_id in resolved_unique_key_ids
+            if case_id.testType.lower() == "ai draft"
         ]
+        if input.isPerformance:
+            resolved_unique_key_ids_as_str = [
+                str(case_id.testCaseUUID) for case_id in resolved_unique_key_ids
+                if case_id.testMode == "Performance" and case_id.testType.lower() != "ai draft"
+            ]
+            non_performance_case_keys = [
+                case_id.uniqueKey for case_id in resolved_unique_key_ids
+                if case_id.testMode != "Performance"
+            ]
+            log = f"Non-performance test cases with keys: {non_performance_case_keys} can't be added to a performance test run."
+        else:
+            resolved_unique_key_ids_as_str = [
+                str(case_id.testCaseUUID) for case_id in resolved_unique_key_ids if case_id.testMode != "Performance" and case_id.testType.lower() != "ai draft"
+            ]
+            performance_case_keys = [
+                case_id.uniqueKey for case_id in resolved_unique_key_ids
+                if case_id.testMode == "Performance"
+            ]
+            log = f"Performance test cases with keys: {performance_case_keys} can't be added to a Non-performance test run."
+        if ai_draft_case_keys:
+            log += f" AI draft test cases with keys: {ai_draft_case_keys} can't be added to a test run."
         if action == "add":
             add_case_ids = _append_unique(add_case_ids, resolved_unique_key_ids_as_str)
         elif action == "remove":
@@ -862,7 +884,7 @@ async def add_or_remove_test_cases_from_test_run(
                 remove_case_ids, resolved_unique_key_ids_as_str
             )
 
-    filter_base_params = {
+    filter_base_params: dict[str, Any] = {
         "query": ",".join(name_terms) if name_terms else None,
         "testMode": input.testMode,
         "featureName": input.featureName,
@@ -874,6 +896,8 @@ async def add_or_remove_test_cases_from_test_run(
     filter_base_params = {
         k: v for k, v in filter_base_params.items() if v not in (None, "")
     }
+    if filter_base_params:
+        filter_base_params.update({"isPerformance": input.isPerformance})
 
     should_fetch_filtered_test_cases = bool(filter_base_params)
     if should_fetch_filtered_test_cases:
@@ -932,18 +956,18 @@ async def add_or_remove_test_cases_from_test_run(
 
         if len(filtered_test_case_ids) == 0:
             raise Exception(
-                f"No test case found with the provided criteria to {input.action}"
+                f"No test case found with the provided criteria to {input.action}. STOP THE PROCESS."
             )
 
         if action == "add":
-            add_case_ids = filtered_test_case_ids
+            add_case_ids = list(set(add_case_ids + filtered_test_case_ids))
         elif action == "remove":
-            remove_case_ids = filtered_test_case_ids
+            remove_case_ids = list(set(remove_case_ids + filtered_test_case_ids))
 
     if action == "add" and not add_case_ids:
-        raise Exception("No test case IDs were resolved to add to the test run")
+        raise Exception("No test case IDs were resolved to add to the test run. STOP THE PROCESS.")
     if action == "remove" and not remove_case_ids:
-        raise Exception("No test case IDs were resolved to remove from the test run")
+        raise Exception("No test case IDs were resolved to remove from the test run. STOP THE PROCESS.")
 
     payload = {
         "testCaseId": add_case_ids,
@@ -957,7 +981,7 @@ async def add_or_remove_test_cases_from_test_run(
         payload,
     )
     if resp["status_code"] == 200:
-        return f"Test cases successfully {action}ed the test run with ID: {input.id}"
+        return f"Test cases successfully {action}ed the test run with ID: {input.id}\nAddition info to user {log}"
     else:
         raise Exception(f"Failed to update test cases in test run: {resp['data']}")
 
@@ -1105,10 +1129,10 @@ async def get_test_cases_with_filters(
         raise Exception(f"An error occurred while retrieving test cases: {str(e)}")
 
 
-@mcp.tool("get_test_cases_uuid_by_unique_keys")
+# @mcp.tool("get_test_cases_uuid_by_unique_keys")
 async def get_test_cases_uuid_by_unique_keys(
     input: GetTestCasesUUIDByUniqueKeyInput,
-) -> List[uuid.UUID]:
+) -> List[GetTestCasesUUIDByUniqueKeyOutput]:
     """
     Get list of test cases UUIDs in a project by taking list of unique keys of the test cases.
     This method takes list of unique keys of test cases and returns list of test case uuids.
@@ -1125,7 +1149,7 @@ async def get_test_cases_uuid_by_unique_keys(
 
     semaphore = asyncio.Semaphore(5)
 
-    async def _fetch_uuid_for_key(unique_key: str) -> uuid.UUID:
+    async def _fetch_uuid_for_key(unique_key: str) -> GetTestCasesUUIDByUniqueKeyOutput:
         params = {
             "id": _project(input.projectId),
             "query": unique_key,
@@ -1158,7 +1182,7 @@ async def get_test_cases_uuid_by_unique_keys(
                 test_case_id = test_case.get("id")
                 if not test_case_id:
                     break
-                return uuid.UUID(str(test_case_id))
+                return GetTestCasesUUIDByUniqueKeyOutput(testCaseUUID=uuid.UUID(str(test_case_id)), testMode=test_case.get("testMode"), uniqueKey=test_case.get("uniqueKey"), testType=test_case.get("testType"))
 
         raise Exception(
             f"No exact test case match found for unique key: {unique_key} in project with ID: {input.projectId}"
