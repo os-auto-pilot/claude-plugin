@@ -69,7 +69,7 @@ means it lacks the scope for that action.
 `get_test_cases_uuid_by_unique_keys`
 
 **Failure Analysis**
-`fetch_test_run_results`, `fetch_test_run_failure_details`, `fetch_element_details`, `fetch_util_details`
+`fetch_test_run_results`, `fetch_test_run_failure_details`, `fetch_element_details`, 
 
 **Projects & Modules**
 `get_project_id_by_name`, `get_projects_assigned_to_user`, `create_module`,
