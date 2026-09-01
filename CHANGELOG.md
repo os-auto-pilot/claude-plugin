@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1
+
+- **API key from workspace `.env` or OS environment** — no longer depends on
+  Claude's `userConfig` / plugin Configure UI (which Claude Desktop does not
+  support today). `server/launch.py` reads `PLATFORM_API_KEY` from the process
+  environment first, then the workspace `.env`, then `~/.claude/.credentials.json`
+  as a CLI-install fallback. Removed `userConfig` from `.claude-plugin/plugin.json`
+  and `${user_config.platform_api_key}` from `.mcp.json`.
+- Added `.env.example`.
+
 ## 0.1.0
 
 Initial release.

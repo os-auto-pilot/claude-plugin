@@ -196,8 +196,8 @@ After all batches for a file are pushed:
 
 ## Error handling
 
-- **401** — API key missing or expired. Ask the user to check `platform_api_key`
-  in plugin settings.
+- **401** — API key missing or expired. Ask the user to check `PLATFORM_API_KEY`
+  in the workspace `.env` file (or the OS environment).
 - **403** — API key lacks `generate` scope. User needs to regenerate with the
   correct scopes.
 - **4xx/5xx** — surface the error verbatim and skip that batch; continue with

@@ -6,8 +6,8 @@ REST call to either:
   * the execution API (python_tool, runs).
 
 Auth is a single per-user API key sent as the ``x-api-key`` header (the backend's
-existing convention), read once from the environment that the plugin's
-``.mcp.json`` injects from ``userConfig``.
+existing convention), read from the OS environment or the workspace ``.env`` file
+(see ``server/launch.py``).
 """
 
 from __future__ import annotations

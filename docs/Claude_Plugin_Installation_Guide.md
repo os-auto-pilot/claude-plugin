@@ -155,28 +155,38 @@ claude plugin install auto-pilot@oniesoft --scope user
 claude plugin install auto-pilot@oniesoft --scope project
 ```
 
-### Step 4 — Enter your API key
+### Step 4 — Set your API key in `.env`
 
-The plugin declares one required setting: your **Oniesoft API key**.
+Claude Desktop **does not prompt for plugin API keys** during marketplace install
+(a known gap — `userConfig` collection is CLI-only today). Set the key in your
+**project workspace** instead.
 
-#### Option A — Prompt on install (default)
+Create `.env` in the root of the project you open in Claude (same folder as
+`config.json`):
 
-When you enable the plugin for the first time, Claude Code prompts for **API key**. Because this field is marked `sensitive`, the value is stored securely (macOS Keychain, or `~/.claude/.credentials.json` on other platforms) — **not** in plain-text `settings.json`.
-
-#### Option B — Pass the key during CLI install
-
-```bash
-claude plugin install auto-pilot@oniesoft --scope user --config platform_api_key=YOUR_API_KEY_HERE
+```env
+PLATFORM_API_KEY=your-personal-api-key-here
 ```
 
-#### Option C — Update later in the plugin UI
+Optional URL overrides (omit if `config.json` already has them):
 
-1. Run `/plugin` inside a Claude Code session.
-2. Open the **Installed** tab.
-3. Select **auto-pilot by Oniesoft**.
-4. Edit the **API key** field and save.
+```env
+PLATFORM_API_URL=http://localhost:8000
+BACKEND_URL=http://localhost:8088
+```
 
-> **Generate a key:** In the Oniesoft platform UI, go to **Profile → API Keys**. Create a key. A `401` from any tool means the key is missing or expired; a `403` means it lacks the required scope.
+> **Never commit `.env`** — add it to `.gitignore`. See `.env.example` in the
+> plugin repo for a template.
+
+**Credential precedence** (highest first):
+
+1. **OS environment** — `export PLATFORM_API_KEY=...` (or Windows equivalent)
+2. **Workspace `.env`** — recommended for desktop and CLI use
+3. **`~/.claude/.credentials.json`** — only if you installed via CLI with
+   `--config platform_api_key=...` (backward compatibility)
+
+> **Generate a key:** In the Oniesoft platform UI, go to **Users → API Keys**.
+> A `401` means the key is missing or expired; a `403` means it lacks scope.
 
 ### Step 5 — Reload plugins (if needed)
 
@@ -197,9 +207,14 @@ On the first session start after install, the plugin automatically:
 
 ## Configure your project
 
-The API key is the **only** global plugin setting. Everything else is **per-project** and lives in a `config.json` file in the root of the project you are working in.
+Credentials and project settings live in your **workspace folder** (the project
+you open in Claude), not in the plugin directory.
 
-Download `config.json` and place it in your project folder. The downloaded file looks like this:
+### `.env` — API key (required)
+
+See [Step 4](#step-4--set-your-api-key-in-env) above.
+
+### `config.json` — project IDs and API URLs (required)
 
 ```json
 {
@@ -261,8 +276,9 @@ A successful response confirms the API key, URLs, and project config are wired u
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `uv: command not found` | uv not installed or not on `PATH` | Install uv (see above) and restart your shell |
+| `no PLATFORM_API_KEY configured` | Missing `.env` | Create `.env` in workspace root with `PLATFORM_API_KEY=...` |
 | MCP server fails to start | Python/deps not bootstrapped | Start a new session (SessionStart hook runs bootstrap); or run manually: `uv run --with-requirements server/requirements.txt --python ">=3.10" server/launch.py --bootstrap-only` from the plugin root |
-| `401` on tool calls | Missing or expired API key | Re-enter the key via `/plugin` → Installed → auto-pilot |
+| `401` on tool calls | Missing or expired API key | Add `PLATFORM_API_KEY=...` to workspace `.env` or OS environment |
 | `403` on tool calls | API key lacks scope | Regenerate the key with `generate` / `run` / `read` scopes |
 | `No project_id given...` | Missing `config.json` | Add `config.json` to your project root with `projectId`, `companyId`, `userId` |
 | Plugin not found after install | Marketplace cache stale | `/plugin marketplace update oniesoft`, then retry install |
@@ -282,8 +298,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # uv
 # 2. Inside a Claude Code session
 /plugin marketplace add https://bitbucket.org/onie-soft/auto-pilot-claude-plugin.git
 /plugin install auto-pilot@oniesoft
-# → enter API key when prompted
 /reload-plugins
 
-# 3. In your project folder — create config.json with company/project/user IDs and API URLs
+# 3. In your project folder — .env (API key) + config.json (IDs/URLs)
 ```

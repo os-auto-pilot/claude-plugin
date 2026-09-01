@@ -14,7 +14,12 @@ Company ID, user ID, project ID, and the three API URLs are per-project settings
 
 **At the start of each session, read `config.json` from the project root and keep `companyId`/`projectId`/`userId` in mind for the rest of the conversation.** Pass them explicitly as `projectId` / `companyId` / `userId` (or `registerId` where a tool asks for the user's ID) on every tool call that accepts them — do not assume they are auto-injected. (`server/launch.py` also tries to inject them as environment variables at server startup as a bonus fallback, but this depends on the MCP host launching the server with the project directory as its working directory, which is not reliable — don't depend on it.)
 
-The **API key** is the only credential that stays in the global plugin config (set once in Claude Code settings), sourced from `~/.claude/.credentials.json` and injected as `PLATFORM_API_KEY`. This one *is* reliably injected — no need to read or pass it.
+The **API key** is set in the workspace **`.env`** file (`PLATFORM_API_KEY=...`) or
+the OS environment. Generate one in the platform under Users → API Keys. It is
+injected automatically — never read or pass it in chat. Claude Desktop does not
+collect plugin `userConfig` values today, so `.env` is the supported path for
+desktop installs. CLI installs may still fall back to `~/.claude/.credentials.json`
+if the key was provided via `claude plugin install --config platform_api_key=...`.
 
 If `config.json` is missing a value you need, or a tool call fails with "No project_id given and no default configured" (or similar for company/user ID), ask the user for the missing value directly — never search `.credentials.json`, `settings.json`, or other config files to hunt for identifiers like emails or registerIds. Those files hold secrets and are out of scope for resolving a missing project/company/user ID.
 

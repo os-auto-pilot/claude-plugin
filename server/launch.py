@@ -4,9 +4,10 @@ Claude Code runs this via ``uv run --with-requirements server/requirements.txt``
 which resolves/installs a compatible Python and dependencies before handing off
 here — cross-platform, with no bespoke venv-bootstrap code needed in this file.
 
-This script only injects environment (API key, per-project config) that Claude
-Code's own ${user_config.*} substitution can't reliably provide, then runs the
-server in-process.
+Workspace-level credentials (``PLATFORM_API_KEY`` in ``.env`` or the OS
+environment) and per-project settings (company/user/project ID, API URLs in
+``config.json``) are read from the user's project directory, not from Claude's
+``userConfig`` UI — which the desktop app does not collect today.
 
 Run with ``--bootstrap-only`` (used by the SessionStart hook) to let `uv run`
 finish syncing dependencies and exit immediately, so the first tool call isn't
@@ -26,32 +27,122 @@ PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # dir for `--plugin-dir` dev use where it may be unset.
 DATA_DIR = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.join(PLUGIN_ROOT, ".data")
 
+SNAPSHOT_PATH = os.path.join(DATA_DIR, "active_project.json")
 
-def _inject_api_key(env: MutableMapping[str, str]) -> None:
-    """Read the API key secret from ~/.claude/.credentials.json and inject it.
+#: Settings loaded from the workspace ``.env`` (gap-fill only).
+_ENV_OVERRIDABLE = ("PLATFORM_API_KEY", "PLATFORM_API_URL", "BACKEND_URL")
 
-    Claude Code's ${user_config.*} substitution in config.json env blocks is not
-    reliable: some spawned instances of this server receive a literal
-    placeholder string (e.g. "your-api-key-here") instead of the real secret or
-    an empty value. A placeholder is truthy, so a "fill only if unset" check
-    would leave it in place. ~/.claude/.credentials.json is the authoritative
-    source, so it always overrides whatever Claude Code already put in env.
 
-    The API key is the only credential that stays in the global plugin config —
-    everything else (company/user/project ID, API URLs) is per-project and comes
-    from the project's own config.json (see _inject_project_config).
+def _read_snapshot() -> dict:
+    try:
+        with open(SNAPSHOT_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _write_snapshot(updates: dict) -> None:
+    if not updates:
+        return
+    snapshot = _read_snapshot()
+    snapshot.update(updates)
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(SNAPSHOT_PATH, "w", encoding="utf-8") as fh:
+            json.dump(snapshot, fh)
+    except Exception:
+        pass
+
+
+def _is_placeholder(val: str) -> bool:
+    """True if `val` is an unsubstituted ``${VAR}`` template rather than a value."""
+    return val.startswith("${") and val.endswith("}")
+
+
+def _strip_unresolved(env: MutableMapping[str, str]) -> None:
+    """Drop env vars still holding an unsubstituted ``${VAR}`` placeholder.
+
+    Claude may inject the literal string ``${user_config.platform_api_key}``
+    when the desktop UI never collected a userConfig value.
     """
-    home = os.path.expanduser("~")
-    claude_dir = os.path.join(home, ".claude")
+    for key, val in list(env.items()):
+        if isinstance(val, str) and _is_placeholder(val):
+            del env[key]
 
-    # Determine the plugin key ("auto-pilot@<server-name>").
-    # Try both the current server name and the legacy "oniesoft" name so existing
-    # settings.json entries are not silently dropped after a server rename.
+
+def _load_env_file(env: MutableMapping[str, str], project_dir: str) -> None:
+    """Fill any still-unset setting from the workspace's ``.env``.
+
+    Only fills gaps — never overrides a value already present in the process
+    environment (highest precedence).
+    """
+    path = os.path.join(project_dir, ".env")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except Exception:
+        return
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip().strip("'\"")
+        if not val or _is_placeholder(val):
+            continue
+        if key not in _ENV_OVERRIDABLE:
+            continue
+        if not env.get(key):
+            env[key] = val
+
+
+def _inject_project_config(env: MutableMapping[str, str], project_dir: str) -> None:
+    """Read the project's config.json and inject company/user/project ID and API URLs."""
+    field_env_map = {
+        "companyId": "PLATFORM_COMPANY_ID",
+        "userId": "PLATFORM_USER_ID",
+        "projectId": "PLATFORM_PROJECT_ID",
+        "platformApiUrl": "PLATFORM_API_URL",
+        "backendUrl": "BACKEND_URL",
+    }
+
+    project_config = os.path.join(project_dir, "config.json")
+    try:
+        with open(project_config, encoding="utf-8") as fh:
+            config = json.load(fh)
+    except Exception:
+        return
+
+    for field, env_var in field_env_map.items():
+        val = config.get(field)
+        if val and not env.get(env_var):
+            env[env_var] = str(val)
+
+    snapshot = {
+        key: config[key]
+        for key in ("projectId", "userId", "companyId")
+        if config.get(key)
+    }
+    if snapshot.get("projectId"):
+        _write_snapshot(snapshot)
+
+
+def _inject_api_key_from_credentials(env: MutableMapping[str, str]) -> None:
+    """Fallback: read API key from ~/.claude/.credentials.json (CLI install path).
+
+    Only used when PLATFORM_API_KEY is still unset after OS env and workspace
+    ``.env`` — keeps backward compatibility for users who installed via
+    ``claude plugin install --config platform_api_key=...``.
+    """
+    if env.get("PLATFORM_API_KEY"):
+        return
+
     plugin_name = "auto-pilot"
     server_name = "auto-pilot"
     try:
-        config_json_path = os.path.join(PLUGIN_ROOT, "config.json")
-        with open(config_json_path, encoding="utf-8") as fh:
+        with open(os.path.join(PLUGIN_ROOT, "config.json"), encoding="utf-8") as fh:
             config_data = json.load(fh)
         server_name = next(iter(config_data.get("mcpServers", {})), server_name)
     except Exception:
@@ -59,9 +150,9 @@ def _inject_api_key(env: MutableMapping[str, str]) -> None:
 
     candidate_keys = [f"{plugin_name}@{server_name}"]
     if server_name != "oniesoft":
-        candidate_keys.append(f"{plugin_name}@oniesoft")  # legacy fallback
+        candidate_keys.append(f"{plugin_name}@oniesoft")
 
-    creds_path = os.path.join(claude_dir, ".credentials.json")
+    creds_path = os.path.join(os.path.expanduser("~"), ".claude", ".credentials.json")
     try:
         with open(creds_path, encoding="utf-8") as fh:
             creds = json.load(fh)
@@ -75,68 +166,48 @@ def _inject_api_key(env: MutableMapping[str, str]) -> None:
         pass
 
 
-def _inject_project_config(env: MutableMapping[str, str], project_dir: str) -> None:
-    """Read the project's config.json (in the user's working directory — not
-    the plugin directory) and inject company/user/project ID and API URLs.
+def _has_project_files(path: str) -> bool:
+    return os.path.isfile(os.path.join(path, ".env")) or os.path.isfile(
+        os.path.join(path, "config.json")
+    )
 
-    These values are per-project, not global plugin settings, so they live in a
-    config.json that ships with the project folder itself rather than in
-    ~/.claude/settings.json.
-    """
-    field_env_map = {
-        "companyId": "PLATFORM_COMPANY_ID",
-        "userId": "PLATFORM_USER_ID",
-        "projectId": "PLATFORM_PROJECT_ID",
-        "platformApiUrl": "PLATFORM_API_URL",
-        "backendUrl": "BACKEND_URL",
-    }
 
-    project_mcp_json = os.path.join(project_dir, "config.json")
-    try:
-        with open(project_mcp_json, encoding="utf-8") as fh:
-            config = json.load(fh)
-    except Exception:
-        return
+def _resolve_project_dir() -> str:
+    """Locate the workspace holding this project's ``.env`` / ``config.json``."""
+    project_dir = os.path.expanduser(
+        os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    )
 
-    for field, env_var in field_env_map.items():
-        val = config.get(field)
-        if val and not env.get(env_var):
-            env[env_var] = str(val)
+    if _has_project_files(project_dir):
+        _write_snapshot({"workspaceDir": project_dir})
+        return project_dir
 
-    # Persist a fixed-location snapshot of the per-project IDs so server
-    # instances spawned WITHOUT project context (e.g. Claude Desktop's
-    # app-startup MCP server, launched from C:\Windows\system32 before any
-    # project is open) can still resolve them at request time. DATA_DIR is the
-    # same fixed path for every process of this plugin, so this healthy launch's
-    # snapshot is readable by a context-less one. See client.default_project_id.
-    # Only write when we actually have a project id, so a context-less launch
-    # never clobbers a good snapshot.
-    snapshot = {
-        key: config[key]
-        for key in ("projectId", "userId", "companyId")
-        if config.get(key)
-    }
-    if snapshot.get("projectId"):
-        try:
-            os.makedirs(DATA_DIR, exist_ok=True)
-            with open(
-                os.path.join(DATA_DIR, "active_project.json"), "w", encoding="utf-8"
-            ) as fh:
-                json.dump(snapshot, fh)
-        except Exception:
-            pass
+    recorded = _read_snapshot().get("workspaceDir")
+    if recorded and _has_project_files(recorded):
+        return recorded
+
+    return project_dir
 
 
 def main() -> None:
-    bootstrap_only = "--bootstrap-only" in sys.argv[1:]
-    if bootstrap_only:
-        # `uv run` has already synced the environment by the time this code
-        # runs; nothing further to do.
+    if "--bootstrap-only" in sys.argv[1:]:
         return
 
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    # Precedence: OS/process env > workspace .env > config.json (IDs/URLs only)
+    # > ~/.claude/.credentials.json (CLI install fallback).
+    _strip_unresolved(os.environ)
+
+    project_dir = _resolve_project_dir()
+    _load_env_file(os.environ, project_dir)
     _inject_project_config(os.environ, project_dir)
-    _inject_api_key(os.environ)
+    _inject_api_key_from_credentials(os.environ)
+
+    if not os.environ.get("PLATFORM_API_KEY"):
+        print(
+            "auto-pilot: no PLATFORM_API_KEY configured. Set PLATFORM_API_KEY in "
+            f"your OS environment or add it to {os.path.join(project_dir, '.env')}",
+            file=sys.stderr,
+        )
 
     sys.path.insert(0, PLUGIN_ROOT)
     os.chdir(PLUGIN_ROOT)

@@ -16,7 +16,7 @@ platform's capabilities as tools:
 | `server/` | Bundled MCP server — a thin HTTP client over the platform (`:8000`) and execution engine (`:3232`). No business logic; the backends do the work. |
 | `skills/` | Workflow playbooks: `create-tests`, `run-tests`, `mobile-testing`, `analyze-run`. Claude invokes them automatically or via `/`. |
 | `agents/` | Subagents: `test-author`, `test-runner`, `failure-analyst`. |
-| `.mcp.json` | Registers the MCP server; injects config + API key as env. |
+| `.mcp.json` | Registers the MCP server (API key read from workspace `.env` at runtime). |
 | `hooks/hooks.json` | SessionStart venv bootstrap (installs `mcp`+`httpx` into `${CLAUDE_PLUGIN_DATA}`). |
 
 ## Requirements
@@ -31,7 +31,7 @@ platform's capabilities as tools:
 
 ## Install
 
-**Full step-by-step guide:** [docs/INSTALLATION.md](docs/INSTALLATION.md)
+**Full step-by-step guide:** [docs/Claude_Plugin_Installation_Guide.md](docs/Claude_Plugin_Installation_Guide.md)
 
 **Quick start (inside a Claude Code session):**
 ```
@@ -39,9 +39,9 @@ platform's capabilities as tools:
 /plugin install auto-pilot@oniesoft
 ```
 
-On enable you'll be prompted for your **API key** (stored in the OS keychain or
-`~/.claude/.credentials.json`). Per-project IDs and API URLs go in a
-`config.json` in your project folder — see the [installation guide](docs/INSTALLATION.md#configure-your-project).
+On enable, add a **`.env`** file in your project with `PLATFORM_API_KEY=...`.
+Per-project IDs and API URLs go in `config.json` — see the
+[installation guide](docs/Claude_Plugin_Installation_Guide.md#configure-your-project).
 
 **For development (no marketplace):**
 ```bash
@@ -85,7 +85,6 @@ means it lacks the scope for that action.
 ## Develop & test
 
 ```bash
-python -m venv .devvenv && ./.devvenv/Scripts/python -m pip install -r server/requirements.txt
-python -c "import asyncio; from server.tools import mcp; print(asyncio.run(mcp.list_tools()))"
+uv run --with-requirements requirements-dev.txt --python ">=3.10" -m pytest tests/ -q
 claude plugin validate . --strict
 ```
