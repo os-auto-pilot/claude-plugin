@@ -12,11 +12,17 @@ changes, so mobile tests don't break on every selector tweak.
 
 ## Authoring mobile tests
 
-- Use `create_test_cases` with `test_mode="mobile"`.
-- Describe the app flow in `user_input` (e.g. "log in, open the profile tab,
-  verify the email is shown"). The locator engine matches steps to on-screen
-  elements by meaning, so you describe intent, not brittle ids/xpaths.
-- Set `apk_id` to the uploaded app's id when known.
+Prefer the three-phase path (`analyze-requirements` → element-discoverer →
+`push-to-autopilot`) with `test_mode="mobile"`. Do **not** follow web authoring
+rules (Playwright recordings, Playwright MCP, `locator_spec` JSON).
+
+- Ask for an Appium/Selenium recording or native mobile codebase before inventing locators.
+- If the user only has a requirements doc: still author steps with `el:` names, but persist
+  every element's `css_selector` and `xpath` as the literal string **`selector`**.
+- If a recording/codebase is provided: copy Appium/Selenium xpath (resource-id, content-desc,
+  accessibility id) only — never `{"steps":[{"method":"get_by_role",...}]}`.
+- Quick path: `create_test_cases` with `test_mode="mobile"` and a flow description. Set
+  `apk_id` to the uploaded app's id when known.
 
 ## Running mobile tests
 

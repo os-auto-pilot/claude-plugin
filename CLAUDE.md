@@ -68,7 +68,7 @@ The core workflow for generating test cases is:
 | Phase | Skill | What happens |
 |---|---|---|
 | 1 | `/analyze-requirements` | Analyze requirement docs / Swagger / codebase → generate markdown test cases + utils |
-| 2 | `element-discoverer` agent | Enrich markdown with real element locators (Playwright or codebase grep) |
+| 2 | `element-discoverer` agent | Enrich markdown with locators: web = Playwright/CSS/XPath (Playwright MCP allowed); mobile = Appium/Selenium xpath only. Mobile with no recording/codebase → selector value `selector`; never Playwright MCP or locator JSON |
 | 3 | `/push-to-autopilot` | Read enriched markdown → call `save_claude_utils` then `save_claude_test_cases` |
 
 ## Performance Test Case Workflow
@@ -127,7 +127,7 @@ password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 = AdminPass@1
 | `skills/run-tests/SKILL.md` | Run test cases or test runs (incl. Performance load profile) |
 | `skills/schedule-test-run/SKILL.md` | Schedule an existing test run for a future date/time + environment |
 | `skills/analyze-run/SKILL.md` | Failure analysis workflow |
-| `agents/element-discoverer.md` | Phase 2 — enrich markdown with real locators |
+| `agents/element-discoverer.md` | Phase 2 — web locators (Playwright/CSS/XPath) or mobile Appium/Selenium xpath; no recording/codebase on mobile → `selector` |
 | `agents/failure-analyst.md` | Deep failure triage (delegated, not inline) |
 | `docs/backend-utils-create-from-claude.md` | Backend implementation spec for the util creation endpoint |
 | `skills/create-datafile/SKILL.md` | Generate + upload a CSV data file (standalone) |

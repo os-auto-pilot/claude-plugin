@@ -46,7 +46,10 @@ where `Util UUID: *(populated after...)*` — these utils were identified but no
 yet saved to the platform.
 
 If any unpersisted utils are found:
-1. Call `save_claude_utils` for those utils (grouped by module)
+1. Call `save_claude_utils` for those utils (grouped by module). Apply the same
+   element locator rules as test cases: **mobile without recording/codebase →
+   `css_selector` and `xpath` are the literal `selector`**; never Playwright JSON
+   on mobile utils.
 2. Fill in the **Util UUID** field in each UTIL-NNN section
 3. Replace all `execute util "util_name"` placeholders in test case steps with
    the real UUIDs returned by the backend
@@ -64,7 +67,7 @@ If the user did not specify which files:
 You need for every push call:
 - `module` — from the test case **Module** field
 - `feature` — from the test case **Feature** field
-- `test_mode` — ask the user once per file: `web`, `api`, or `mobile`
+- `test_mode` — from `<!-- TEST-MODE -->` / the file's Test Mode field; ask only if missing: `web`, `api`, or `mobile`. Do not push a mobile file as `web`.
 - `project_id` — use the plugin default; ask only if not configured
 - `user_id` — use the plugin default; ask only if not configured
 - `created_by` (test cases) / `userName` (utils) — the `empName` resolved in
@@ -116,14 +119,30 @@ Build the `test_cases` array from the markdown file. Each item:
 }
 ```
 
-**Elements with a `locator_spec`** (recording-sourced, per `analyze-requirements` Branch R —
+**Mobile elements — no Playwright JSON.** If `test_mode` is `mobile`, never put a Playwright
+`locator_spec` (`{"steps":[{"method":"get_by_role",...}]}`) into `css_selector` or `xpath`.
+
+- **Mobile recording or native codebase provided:** use the Appium/Selenium XPath (and/or
+  accessibility id) from the Element Info table. Put the xpath string in `xpath` and in
+  `css_selector` (or accessibility id in `css_selector` and xpath in `xpath`).
+- **Mobile recording/codebase NOT provided:** both fields MUST be the literal string
+  `selector` — not empty, not `—`, not a guessed CSS/xpath, not Playwright JSON.
+  The backend already defaults missing locators with
+  `selector = el.css_selector or el.xpath or "selector"`; sending `"selector"` explicitly
+  is required so we do not invent web locators.
+
+```json
+{"name": "email_textbox", "css_selector": "selector", "xpath": "selector"}
+```
+
+**Web elements with a `locator_spec`** (recording-sourced, per `analyze-requirements` Branch R —
 JSON like `{"steps": [{"method": "get_by_role", ...}]}`): put that JSON string, verbatim and
 unmodified, into **both** `css_selector` and `xpath` on the element. Confirmed against
 `agentic_ai_be`'s actual persistence code (`claude_test_case_service.py`/
 `claude_util_service.py`: `selector = el.css_selector or el.xpath or "selector"`) —
 `css_selector` is the field that's actually authoritative (it wins whenever present; `xpath` is
 only a fallback if `css_selector` is empty). Still write to both: it costs nothing, and it means
-this doesn't silently break if that precedence ever changes.
+this doesn't silently break if that precedence ever changes. **Web only — never for mobile.**
 ```json
 {"name": "otp_textbox", "css_selector": "{\"steps\": [{\"method\": \"get_by_role\", \"args\": [\"textbox\"], \"kwargs\": {\"name\": \"Enter 6-digit OTP\"}}]}", "xpath": "{\"steps\": [{\"method\": \"get_by_role\", \"args\": [\"textbox\"], \"kwargs\": {\"name\": \"Enter 6-digit OTP\"}}]}"}
 ```
@@ -196,8 +215,8 @@ After all batches for a file are pushed:
 
 ## Error handling
 
-- **401** — API key missing or expired. Ask the user to check `PLATFORM_API_KEY`
-  in the workspace `.env` file (or the OS environment).
+- **401** — API key missing or expired. Ask the user to check `platform_api_key`
+  in plugin settings.
 - **403** — API key lacks `generate` scope. User needs to regenerate with the
   correct scopes.
 - **4xx/5xx** — surface the error verbatim and skip that batch; continue with

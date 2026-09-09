@@ -1,6 +1,6 @@
 ---
 name: analyze-requirements
-description: Analyze a requirement document, codebase, or Swagger/OpenAPI spec and generate structured manual test cases in markdown covering all Functional +Ve, Functional -Ve, and edge cases. Use when the user wants to create test cases from requirements, a spec, a swagger doc, or application source code.
+description: Analyze a requirement document, codebase, or Swagger/OpenAPI spec and generate structured manual test cases. Web locators from codebase, Playwright recordings, or Playwright MCP. Mobile locators are Appium/Selenium xpath only; without a mobile recording or codebase, persist selector as the literal string selector — never Playwright JSON.
 ---
 
 # Analyze Requirements → Generate Manual Test Cases
@@ -12,74 +12,49 @@ manual test cases in the standard Oniesoft template.
 
 Before authoring anything that will be persisted (utils via `save_claude_utils`, test cases via `save_claude_test_cases`), resolve the current user's **display name** with `get_user_details_by_id_or_email_or_unique_key` and use **`empName` from the response** — never the email, never a UUID — for the `userName` (utils) / `created_by` (test cases) field. See `skills/push-to-autopilot/SKILL.md` → "Known backend quirks" for why this matters and what happens if you get it wrong.
 
+## Hard rules — test mode vs locators
+
+**Decide `test_mode` before writing any Element Info, locator JSON, or Phase 2 handoff.** If the user has not already said web / API / mobile (native Android/iOS), ask once and wait.
+
+| Mode | Allowed locators | Playwright MCP | Playwright `locator_spec` JSON |
+|------|------------------|----------------|--------------------------------|
+| **web** | Playwright locators / CSS / XPath | Allowed in Phase 2 when there is no codebase/recording | Allowed (from recordings) |
+| **api** | None (no Element Info) | Never | Never |
+| **mobile** | Appium / Selenium only: accessibility id, resource-id, Appium XPath | **Never** | **Never** |
+
+**Requirements-only (no recording, no codebase) — STOP and ask first.** Do not invent locators.
+
+> I only have the requirements document — no recordings and no codebase. Element locators will be incomplete unless you share one of:
+> - A recording (web: Playwright `.spec.ts` / `.spec.js`; mobile: Appium or Selenium)
+> - A codebase path (web frontend, or native mobile / React Native / Flutter)
+>
+> How should I proceed?
+> - Share recordings and/or a codebase (best locators)
+> - Continue from requirements only
+
+Then wait. If the user continues from requirements only:
+
+- **Web:** generate test cases with Element Info cells as `—`. Phase 2 **may** use Playwright MCP against a live URL to fill locators. Do not invent Playwright JSON in Phase 1.
+- **Mobile:** generate test cases **without real locators**. For every `el:` element, put the **literal string** `selector` in **both** the CSS Selector and XPath columns (and Accessibility ID if that column is used). Do **not** guess CSS, XPath, `getByRole`, or `locator_spec` JSON. Skip Playwright MCP and skip browser-based Phase 2. Phase 3 must send `"css_selector": "selector"` and `"xpath": "selector"`.
+
+**Mobile with a recording or codebase:** copy Appium/Selenium locators only (xpath / accessibility id / resource-id). Never transcribe them into Playwright `{"steps":[{"method":"get_by_role",...}]}` JSON.
+
+Write `<!-- TEST-MODE: web|api|mobile -->` at the top of every generated `test-cases-*.md`.
+
 ## Step 1 — Intake: requirement doc / Swagger / codebase
 
-Ask the user for the **primary source** only in a single message — do not ask for recordings yet:
+Ask for **test mode** (if unknown) and the **primary source** in a single message — do not ask for recordings yet:
 
+> **Test type** (required): web, API, or native mobile?
+>
 > **Please share your primary source (provide at least one):**
 >
 > - Requirements / feature document
 > - Swagger / OpenAPI spec URL or file
-> - Codebase path (frontend, backend, or full-stack)
+> - Codebase path (web frontend/backend, native mobile, or full-stack)
 > - HAR file — optional, adds backend error message accuracy
 
 After the user provides this, proceed to **Step 1b**.
-
-## Step 1b — Detect Codebase Type (if codebase provided)
-
-If a codebase was provided, classify it:
-
-| Signals | Classification | Test type |
-|---|---|---|
-| `.tsx`, `.jsx`, `.vue`, `.svelte`, `components/`, `pages/`, HTML templates | **Frontend** | Web |
-| `controllers/`, `routes/`, `views.py`, `serializers.py`, `schema.prisma`, `models/`, REST/GraphQL handlers | **Backend** | API |
-| Both present | **Full-stack** | Web + API |
-
-- Frontend / Full-stack codebase → do **not** ask for recordings (codebase already has element identifiers)
-- Backend codebase → API test cases only, skip Phase 2 entirely
-
-If codebase is provided, proceed directly to **Step 2**.
-
-## Step 1c — Identify flows and collect recordings
-
-**MANDATORY — do not skip, do not proceed to Step 2 until this step is complete.**
-
-Do the following **before generating any test cases**, regardless of what was provided in Step 1:
-
-**Exception:** skip this step only if a frontend or full-stack codebase was provided (codebase already contains element identifiers — recordings add no value on top of that).
-
-If no codebase was provided, do the following:
-
-**1. Scan the requirement doc / Swagger to identify all distinct user flows.** A flow is a self-contained user journey: Create, Update, Delete, Search, Login, Export, etc.
-
-**2. Present the flows found and ask for recordings per flow:**
-
-> I found these flows in the requirements:
-> - **Create [Entity]** — add a new record
-> - **Update [Entity]** — edit an existing record
-> - **Delete [Entity]** — remove a record
-> - *(list all flows found)*
->
-> For each flow, Playwright recordings (positive + negative) dramatically improve test case quality and count — they provide exact element names, real validation messages, and exact test data.
->
-> Please share what you have for each flow:
-> - Positive recording (`.spec.ts` / `.spec.js`) — happy path
-> - Negative recording — validation/error scenarios
-> - If you don't have a recording for a flow, I'll generate test cases from the requirements alone for that flow (fewer cases, inferred constraints)
-
-**3. STOP. Send the message above and wait for the user's response. Do NOT generate any test cases yet.** The user may provide:
-- Recordings for all flows → best coverage
-- Recordings for some flows → full coverage for recorded flows, inferred for the rest
-- No recordings → all flows generated from requirements only
-
-**4. Map what was provided:**
-
-| Flow | Positive recording | Negative recording | Source |
-|---|---|---|---|
-| Create Client | `client_creation_positive.ts` | `client_creation_negative.ts` | Recording |
-| Delete Client | — | — | Requirements only |
-
-Proceed to **Step 2** with this map.
 
 ## Step 1b — Detect Codebase Type (if codebase provided)
 
@@ -87,14 +62,63 @@ If a codebase was provided, classify it by inspecting file extensions, directory
 
 | Signals | Classification | Test type to generate |
 |---|---|---|
-| `.tsx`, `.jsx`, `.vue`, `.svelte`, `components/`, `pages/`, HTML templates | **Frontend** | Web test cases |
+| `.tsx`, `.jsx`, `.vue`, `.svelte`, `components/`, `pages/`, HTML templates (browser UI) | **Frontend** | Web test cases |
 | `controllers/`, `routes/`, `views.py`, `serializers.py`, `schema.prisma`, `models/`, REST/GraphQL handlers, `app.py`, `main.py` (FastAPI/Flask) | **Backend** | API test cases |
-| Both frontend and backend signals present | **Full-stack** | Web test cases (frontend) + API test cases (backend) |
+| Both frontend and backend signals present | **Full-stack** | Web + API |
+| Android `res/layout`, `android:id`, Kotlin/Java Activities, iOS storyboards, `accessibilityIdentifier`, Appium tests, React Native / Flutter **native app** screens | **Native mobile** | Mobile test cases |
 
 This classification determines test type for everything that follows:
-- Frontend codebase → Web test cases only; do **not** ask for recordings
+- Frontend / Full-stack **web** codebase → Web test cases; do **not** ask for Playwright recordings
+- Native mobile codebase → Mobile test cases; do **not** ask for Playwright recordings; extract Appium/Selenium locators (Branch M)
 - Backend codebase → API test cases only; skip Phase 2 (element-discoverer) entirely
-- Full-stack → both; do **not** ask for recordings
+- User explicitly asked for **mobile** but the codebase is a **web** frontend → still `test_mode=mobile` only if they insist; do **not** copy Playwright locators into mobile elements. Ask for a mobile recording/codebase, otherwise use literal `selector`.
+
+If a matching codebase was provided, proceed directly to **Step 2**.
+
+## Step 1c — Identify flows and collect recordings
+
+**MANDATORY for Web and Mobile when no matching codebase was provided — do not skip, do not proceed to Step 2 until this step is complete.**
+
+**Skip this step when:**
+- A frontend or full-stack **web** codebase was provided (web element identifiers already exist)
+- A **native mobile** codebase was provided (Appium/Selenium identifiers already exist)
+- Test mode is **API** (no UI elements)
+
+If no matching codebase was provided, scan the requirement doc / Swagger for distinct user flows, then ask **mode-specific** recordings. **Never ask a mobile user for Playwright recordings. Never apply Branch R (Playwright JSON) to mobile.**
+
+**Web — ask:**
+
+> I found these flows in the requirements:
+> - *(list all flows)*
+>
+> For each flow, Playwright recordings (positive + negative) improve element names, validation messages, and test data.
+>
+> Please share what you have:
+> - Positive recording (`.spec.ts` / `.spec.js`)
+> - Negative recording
+> - Codebase path
+> - Or continue from requirements only (Phase 2 can use Playwright MCP on a live URL)
+
+**Mobile — ask:**
+
+> I found these flows in the requirements:
+> - *(list all flows)*
+>
+> For each flow, Appium or Selenium recordings (or a native app codebase) are required for real locators. Playwright locators and Playwright MCP are **not** valid for mobile.
+>
+> Please share what you have:
+> - Appium/Selenium recording (Java/Python/JS) or inspector dump with xpath / accessibility id / resource-id
+> - Native mobile / React Native / Flutter codebase
+> - Or continue from requirements only — elements will be created with selector value **`selector`** (no guessed locators)
+
+**STOP. Wait for the user's response. Do NOT generate test cases yet.**
+
+Map what was provided, then proceed to **Step 2**:
+
+| Flow | Positive recording | Negative recording | Source |
+|---|---|---|---|
+| Create Client | `client_creation_positive.ts` | `client_creation_negative.ts` | Recording |
+| Delete Client | — | — | Requirements only |
 
 ## Step 2 — Scope check
 
@@ -123,7 +147,7 @@ Also call `fetch_util_details` for the relevant module/feature to discover any o
 
 ## Step 2c — Load autopilot step templates
 
-Before any extraction, call `get_autopilot_steps` with the relevant `test_mode` (`web`, `api`, or `mobile`). For full-stack projects call it twice — once for `web` and once for `api`.
+Before any extraction, call `get_autopilot_steps` with the relevant `test_mode` (`web`, `api`, or `mobile`). For full-stack **web+API** projects call it twice — once for `web` and once for `api`. For native mobile call it once with `mobile` — do not also load `web` step templates for a mobile file.
 
 Use the returned `step` templates as the **only valid autopilot syntax** when writing steps in Step 3. Do not invent steps outside this list.
 
@@ -172,7 +196,9 @@ Web test cases from Swagger still need element discovery in Phase 2 unless a fro
 
 ---
 
-### Branch FE — Frontend codebase provided
+### Branch FE — Frontend codebase provided (Web only)
+
+**Do not use this branch for native mobile.** Web HTML/CSS/Playwright attributes (`data-testid`, CSS, Playwright JSON) must never be copied onto `test_mode=mobile` elements.
 
 Extract BOTH element identifiers AND validation constraints in one pass. No recordings needed. No browser launch needed.
 
@@ -252,9 +278,36 @@ Produces: **API Schema Map** for API test case generation. No Element Map. No Ph
 
 ---
 
-### Branch R — Playwright recordings provided (only when no frontend codebase)
+### Branch M — Native mobile codebase or Appium/Selenium recording (Mobile only)
 
-Only use this branch when no frontend codebase was provided (requirements doc or Swagger as the sole source for a Web feature).
+Use this branch when `test_mode` is **mobile** and a native codebase or Appium/Selenium recording was provided.
+
+**Forbidden:** Playwright `page.getByRole` / `getByText` / `locator_spec` JSON, Playwright MCP, CSS selectors invented from a web DOM.
+
+Extract locators in this priority (store the real string, not JSON):
+
+| Source | Store as |
+|---|---|
+| `accessibility id` / `accessibilityIdentifier` / `content-desc` | accessibility id; also Appium XPath `//*[@content-desc='…']` or `//*[@name='…']` when needed |
+| Android `resource-id` / `android:id` | id; XPath `//*[@resource-id='…']` |
+| Explicit Appium/Selenium `By.xpath` / `AppiumBy.XPATH` | that XPath verbatim |
+| React Native `testID` / Flutter `Key` in a **mobile** codebase | Appium xpath/`~` accessibility as appropriate — still not Playwright JSON |
+
+Write `<!-- ELEMENT-MAP source: mobile-codebase-or-recording -->` with **xpath** (and optional accessibility id) only.
+
+Element Info table for mobile (no Playwright column):
+
+```markdown
+| Element | Accessibility ID | Appium/Selenium XPath |
+|---------|------------------|-----------------------|
+| email_textbox | login_email | //*[@resource-id='com.app:id/email'] |
+```
+
+On push, put the Appium/Selenium XPath in **both** `css_selector` and `xpath` (or accessibility id in `css_selector` and xpath in `xpath`). Never a Playwright JSON object.
+
+### Branch R — Playwright recordings provided (Web only — never mobile)
+
+Only use this branch when `test_mode` is **web** and no frontend codebase was provided (requirements doc or Swagger as the sole source for a Web feature). **If test mode is mobile, skip this entire branch** even if a `.spec.ts` file is sitting in the workspace.
 
 Read the full recording file(s) and use LLM analysis to extract every element — do NOT use a fixed pattern table. Every `page.*` and `expect(page.*)` call must produce an element entry. Nothing is skipped.
 
@@ -353,9 +406,21 @@ Flag every inferred constraint:
 Add at the top of each generated file:
 ```markdown
 <!-- VALIDATION-SOURCE: requirements-doc-only — constraints are inferred, not verified -->
+<!-- TEST-MODE: web|mobile|api -->
 ```
 
-No Element Map produced. Phase 2 will need to use Playwright browser (last resort) if a live URL is available.
+**Web:** No Element Map. Leave Element Info locator cells as `—`. Phase 2 **may** use Playwright MCP if the user provides a live URL. Do not invent `locator_spec` JSON in Phase 1.
+
+**Mobile — CRITICAL:** No Element Map. Do **not** run Phase 2 browser/Playwright MCP. Do **not** invent Appium xpath, CSS, or Playwright JSON. For every `el:` row, set locator cells to the literal word `selector`:
+
+```markdown
+| Element | Accessibility ID | Appium/Selenium XPath |
+|---------|------------------|-----------------------|
+| email_textbox | selector | selector |
+| login_button | selector | selector |
+```
+
+If a Web-style three-column table is used by mistake, still put `selector` in **CSS Selector and XPath** (and `—` or `selector` in Playwright — never a JSON locator). Phase 3 must persist `"css_selector": "selector", "xpath": "selector"`.
 
 ---
 
@@ -391,7 +456,7 @@ For each new util, write a `UTIL-NNN` section at the top of the markdown file:
 ```markdown
 ## UTIL-001: Login as Standard User
 **Util Name:** login_as_standard_user
-**Test Mode:** Web
+**Test Mode:** Web   *(or Mobile — never mix Playwright locators into a Mobile util)*
 **Feature:** [feature name]
 
 ### Autopilot Steps
@@ -407,13 +472,12 @@ check element "el:dashboard_header" is visible in the page
 | email    | user@example.com | text |
 | password | Test@123!        | text |
 
-### Element Info *(populated in Phase 2)*
+### Element Info *(Web: Phase 2 fills locators; Mobile without recording/codebase: use literal `selector`)*
 | Element          | Playwright Locator | CSS Selector | XPath |
 |------------------|--------------------|--------------|-------|
 | email_textbox    | —                  | —            | —     |
-| password_textbox | —                  | —            | —     |
-| login_button     | —                  | —            | —     |
-| dashboard_header | —                  | —            | —     |
+
+For **mobile** utils, use the mobile Element Info table (Accessibility ID + Appium/Selenium XPath). Requirements-only mobile: both cells = `selector`.
 
 **Util UUID:** *(populated after save_claude_utils call)*
 ```
@@ -450,6 +514,12 @@ Cover all of:
 - Use navigation flow from the Recording Map, or infer from requirements/codebase
 - Use `+Ve example` values from the Element Map / Recording Map / spec as test data
 - Use `el:` names from the Element Map or Recording Map exactly as defined
+
+**For Mobile test cases:**
+- Same step syntax as web (`el:` names, enter/click/check) but `test_mode` is mobile
+- Locators from Branch M only (Appium/Selenium xpath / accessibility id)
+- Requirements-only: Element Info locators are the literal `selector` — never Playwright JSON, never guessed CSS/xpath
+- Do not use web dropdown heuristics (`getByRole('button')`, native `<select>`) to invent mobile locators
 
 **For Web test cases (-Ve):**
 - Generate one dedicated -Ve test case per constraint in the Validation Schema Map:
@@ -500,16 +570,19 @@ Phase 3 (`/push-to-autopilot`) builds each test case's `elements` payload only f
 ### Expected Result
 [Overall expected outcome in one or two sentences]
 
-### Element Info *(populated in Phase 2)*
+### Element Info *(Web — populated in Phase 2 unless codebase/recording already filled it)*
 | Element | Playwright Locator | CSS Selector | XPath |
 |---------|--------------------|--------------|-------|
 | [name]  | —                  | —            | —     |
 
-For a recording-sourced element with a `locator_spec` (see Branch R), put that JSON text in
-**both** the CSS Selector and XPath columns. `css_selector` is the field the backend actually
-treats as authoritative (confirmed against `agentic_ai_be`'s persistence code — see
-`skills/push-to-autopilot/SKILL.md`); `xpath` is written too as a harmless fallback. Do not split
-a `locator_spec` across the two columns or otherwise alter it.
+### Element Info *(Mobile — Appium/Selenium only; never Playwright JSON)*
+| Element | Accessibility ID | Appium/Selenium XPath |
+|---------|------------------|-----------------------|
+| [name]  | selector         | selector              |
+
+Use real accessibility id / xpath from Branch M when a mobile recording or codebase was provided. If neither was provided, keep **both** cells as the literal `selector`.
+
+**Web + `locator_spec` (Branch R only):** put that JSON text in both the CSS Selector and XPath columns. `css_selector` is the field the backend treats as authoritative (see `skills/push-to-autopilot/SKILL.md`); `xpath` is a fallback. Do not split JSON across columns. **Never write `locator_spec` JSON for mobile.**
 
 ### API Details *(only for api test_mode)*
 **Endpoint:** METHOD /path
@@ -677,9 +750,12 @@ How to tell which type: if the Element Info table shows `getByRole('button')` or
    - If yes → call `save_claude_utils`, fill in **Util UUID** in the markdown, replace all `execute util "util_name"` placeholders with the real UUIDs returned
    - If no → leave the util name placeholders; Phase 3 (`/push-to-autopilot`) will handle this before pushing
 4. Phase 2 handoff:
-   - **Backend-only test cases** → skip Phase 2 entirely. Ask: *"Shall I push these API test cases to the platform now?"*
+   - **Backend-only / API test cases** → skip Phase 2 entirely. Ask: *"Shall I push these API test cases to the platform now?"*
+   - **Mobile test cases with no codebase and no Appium/Selenium recording** → skip Phase 2 entirely. Locators are already the literal `selector`. Ask: *"Shall I push these mobile test cases to the platform now? Elements will be created with selector value `selector` until you provide a recording or codebase."* Never launch Playwright MCP for mobile.
+   - **Mobile test cases with native codebase or Appium/Selenium recording** → Element Map is Appium/Selenium xpath only. Ask: *"Shall I proceed to Phase 2 to copy Appium/Selenium locators into the Element Info tables? (No browser / no Playwright.)"*
    - **Web test cases with frontend codebase** → Element Map was already written to the markdown. Ask: *"Element locators have been extracted from the codebase and written to the markdown. Shall I proceed to Phase 2 to fill in the Element Info tables? (This step is fast — no browser needed)"*
-   - **Web test cases with recordings** → Recording Map already written. Ask same as above.
-   - **Web test cases with no codebase / no recordings** → Ask: *"Shall I proceed to Phase 2 to discover element locators? (A live app URL will be needed for browser-based discovery)"*
-   - If user proceeds → hand off to the `element-discoverer` subagent with the filename(s)
+   - **Web test cases with Playwright recordings** → Recording Map already written. Ask same as above.
+   - **Web test cases with no codebase / no recordings** → Ask: *"Shall I proceed to Phase 2 to discover element locators with Playwright MCP? (A live app URL will be needed.)"*
+   - If user proceeds (and Phase 2 is allowed for this mode) → hand off to the `element-discoverer` subagent with the filename(s)
      - Element discovery order: util sections first, then test case sections
+     - Pass `test_mode` explicitly so the discoverer does not treat mobile files as web

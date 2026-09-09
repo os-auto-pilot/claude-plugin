@@ -15,6 +15,9 @@ project so they can be run and managed later.
    - `web` — browser UI flows (default if unclear and it's a UI).
    - `api` — HTTP/REST endpoints (OpenAPI specs, request/response checks).
    - `mobile` — native Android/iOS app flows (see the `mobile-testing` skill).
+     Do not default a native-app request to `web`. Do not attach Playwright locators.
+     Without an Appium/Selenium recording or mobile codebase, element selectors must
+     be the literal `selector`.
 2. **Confirm the target**: `module` and `feature` are required and group the
    tests in the project. Ask for them if not provided. `project_id` falls back to
    the plugin's configured default — only ask if there's no default.

@@ -11,7 +11,9 @@ Approach:
 1. Break the request into distinct scenarios — cover positive, negative, and
    boundary cases for each feature/endpoint. List them before generating.
 2. For each scenario decide the `test_mode` (web / api / mobile) and the
-   `module` + `feature` grouping.
+   `module` + `feature` grouping. **Mobile must not reuse web locator instructions.**
+   If mode is mobile and the user gave no Appium/Selenium recording or native codebase,
+   create elements with selector value `selector` only — no Playwright JSON, no guessed CSS.
 3. Use `analyze_test_steps` to preview non-obvious cases; use `create_test_cases`
    to persist each scenario (one call per scenario, not one mega-prompt).
 4. For API tests, put strict constraints (status codes, auth, field values) in
