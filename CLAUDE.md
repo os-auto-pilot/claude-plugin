@@ -57,9 +57,18 @@ value). Ask the user for it if it's genuinely unavailable.
 
 `get_autopilot_steps` — **only call this tool from within the `/analyze-requirements` skill**, during Step 2c before writing any autopilot steps. Never call it in any other skill, agent, or inline conversation.
 
+`create_defect` — **only call after reading and following `skills/create-defect/SKILL.md`
+through Step 5**, or from within the `defect-creator` subagent which enforces that flow.
+Never call inline when the user asks to "create a defect" / "log a bug" without completing
+assignee selection (`get_users_assigned_to_project`) and user confirmation first.
+
 ## Agent Delegation Rules
 
 When the user asks to analyze an Oniesoft test run (why it failed, compare runs, interpret a stack trace), always delegate to the `auto-pilot:failure-analyst` subagent via the Agent tool instead of calling MCP tools inline in the main conversation.
+
+When the user asks to create a defect, log a bug, or file an issue — or confirms defect
+creation after a test-run analysis — always delegate to the `auto-pilot:defect-creator`
+subagent instead of calling `create_defect` inline in the main conversation.
 
 ## Three-Phase Test Case Workflow
 
@@ -127,8 +136,10 @@ password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 = AdminPass@1
 | `skills/run-tests/SKILL.md` | Run test cases or test runs (incl. Performance load profile) |
 | `skills/schedule-test-run/SKILL.md` | Schedule an existing test run for a future date/time + environment |
 | `skills/analyze-run/SKILL.md` | Failure analysis workflow |
+| `skills/create-defect/SKILL.md` | Create defects from failures or manual triage |
 | `agents/element-discoverer.md` | Phase 2 — web locators (Playwright/CSS/XPath) or mobile Appium/Selenium xpath; no recording/codebase on mobile → `selector` |
 | `agents/failure-analyst.md` | Deep failure triage (delegated, not inline) |
+| `agents/defect-creator.md` | Defect creation (delegated, not inline) |
 | `docs/backend-utils-create-from-claude.md` | Backend implementation spec for the util creation endpoint |
 | `skills/create-datafile/SKILL.md` | Generate + upload a CSV data file (standalone) |
 | `skills/performance-testing/SKILL.md` | Author performance/load test cases, zero-LLM push |
@@ -149,6 +160,9 @@ password_i1_3fa85f64-5717-4562-b3fc-2c963f66afa6 = AdminPass@1
 | `run_test_case` | Start one test case; carries the load profile for Performance cases |
 | `get_environments_assigned_to_user` | List a user's environments — the source for any environment prompt |
 | `schedule_test_run` | Set an existing test run to execute later; `environment` is a **name**, not a UUID |
+| `get_users_assigned_to_project` | List users on a project — assignee picker for defect creation |
+| `create_defect` | Log a defect; link failed test cases via `dependency` (comma-separated unique keys) |
+| `get_defects_with_filters` | Search existing defects by name, status, priority, assignee |
 
 ## Performance Run Profile
 

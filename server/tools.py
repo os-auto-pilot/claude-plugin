@@ -1041,6 +1041,39 @@ async def get_projects_assigned_to_user(
         raise Exception(f"Failed to retrieve projects assigned to user: {resp['data']}")
 
 
+@mcp.tool("get_users_assigned_to_project")
+async def get_users_assigned_to_project(
+    input: GetUsersAssignedToProjectInput,
+) -> List[GetUsersAssignedToProjectOutput]:
+    """
+    Get list of users assigned to a project. Use this to show assignee options when
+    creating a defect.
+
+    Args:
+        input (GetUsersAssignedToProjectInput): projectId — falls back to the configured default.
+
+    Returns:
+        List[GetUsersAssignedToProjectOutput]: users on the project (empName, userId, empEmail, empRole).
+    """
+    resp = await client.get_backend(
+        f"/projectusers/v1/getassignregisters/{_project(input.projectId)}",
+    )
+    if resp["status_code"] == 200:
+        users = resp["data"]
+        if not users:
+            return []
+        if not isinstance(users, list):
+            users = [users]
+        parsed: list[GetUsersAssignedToProjectOutput] = []
+        for user in users:
+            if not isinstance(user, dict):
+                continue
+            parsed.append(GetUsersAssignedToProjectOutput(**user))
+        return parsed
+    else:
+        raise Exception(f"Failed to retrieve users assigned to project: {resp['data']}")
+
+
 @mcp.tool("get_test_cases_with_filters")
 async def get_test_cases_with_filters(
     input: GetTestCasesWithFiltersInAProjectInput,
@@ -1568,3 +1601,44 @@ async def get_defects_with_filters(
 
     else:
         raise Exception(f"Failed to retrieve defects: {resp['data']}")
+
+
+@mcp.tool("create_defect")
+async def create_defect(input: CreateDefectInput) -> CreateDefectOutput:
+    """Create a new defect with default values.
+
+    ⚠️  SKILL-SCOPED TOOL — only call after following `skills/create-defect/SKILL.md`
+    through Step 5 (assignee picker, confirmation), or from within the `defect-creator`
+    subagent. Do NOT call directly when the user asks to create/log a defect.
+
+    Args:
+        input (CreateDefectInput): Input containing details for creating a defect.
+        assignedBy defaults to createdBy when omitted. priority must be set explicitly
+        (Blocker / Critical / Major / Minor) based on defect impact — see create-defect skill.
+
+    Returns:
+        CreateDefectOutput: Output containing details of the created defect.
+    """
+    if not input.priority:
+        raise ValueError(
+            "priority is required — choose Blocker, Critical, Major, or Minor based on "
+            "defect impact (see create-defect skill Step 4)."
+        )
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    payload = input.model_dump(exclude={"token"}, mode="json", exclude_none=True)
+    resp = await client.post_backend_data(
+        f"/api/issues/save",
+        data=payload,
+        headers=headers,
+    )
+    if resp["status_code"] == 200:
+        data = resp["data"]
+        return CreateDefectOutput(
+            id=str(data.get("id", "")),
+            title=str(data.get("title", "")),
+            uniqueKey=str(data.get("uniqueKey", "")),
+        )
+    else:
+        raise Exception(f"Failed to create defect: {resp['data']}")

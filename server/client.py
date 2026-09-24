@@ -114,6 +114,14 @@ async def post_backend(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     return _result(resp)
 
 
+async def post_backend_data(
+    path: str, data: dict[str, Any], headers: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """POST application/x-www-form-urlencoded to the backend (e.g. /api/issues/save)."""
+    resp = await get_client().post(f"{BACKEND_URL}{path}", data=data, headers=headers)
+    return _result(resp)
+
+
 async def post_backend_multipart(
     path: str, data: dict[str, Any], files: dict[str, tuple[str, bytes, str]]
 ) -> dict[str, Any]:

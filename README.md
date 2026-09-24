@@ -14,8 +14,8 @@ platform's capabilities as tools:
 | Component | Purpose |
 |---|---|
 | `server/` | Bundled MCP server — a thin HTTP client over the platform (`:8000`) and execution engine (`:3232`). No business logic; the backends do the work. |
-| `skills/` | Workflow playbooks: `create-tests`, `run-tests`, `mobile-testing`, `analyze-run`. Claude invokes them automatically or via `/`. |
-| `agents/` | Subagents: `test-author`, `test-runner`, `failure-analyst`. |
+| `skills/` | Workflow playbooks: `create-tests`, `run-tests`, `mobile-testing`, `analyze-run`, `create-defect`. Claude invokes them automatically or via `/`. |
+| `agents/` | Subagents: `test-author`, `test-runner`, `failure-analyst`, `defect-creator`. |
 | `.mcp.json` | Registers the MCP server (API key read from workspace `.env` at runtime). |
 | `hooks/hooks.json` | SessionStart venv bootstrap (installs `mcp`+`httpx` into `${CLAUDE_PLUGIN_DATA}`). |
 
@@ -69,7 +69,10 @@ means it lacks the scope for that action.
 `get_test_cases_uuid_by_unique_keys`
 
 **Failure Analysis**
-`fetch_test_run_results`, `fetch_test_run_failure_details`, `fetch_element_details`, 
+`fetch_test_run_results`, `fetch_test_run_failure_details`, `fetch_element_details`
+
+**Defects**
+`get_defects_with_filters`, `create_defect`, `get_users_assigned_to_project` 
 
 **Projects & Modules**
 `get_project_id_by_name`, `get_projects_assigned_to_user`, `create_module`,

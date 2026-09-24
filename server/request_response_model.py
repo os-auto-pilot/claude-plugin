@@ -1,8 +1,9 @@
+from datetime import datetime, timedelta
 import re
 from typing import List, Literal, Optional
 import uuid
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 #: Where users are sent for load tests too long to run from here.
 AUTOPILOT_PORTAL_URL = "https://www.osautopilot.com"
@@ -674,6 +675,38 @@ class GetProjectsAssignedToUserOutput(BaseModel):
     agileAccess: bool = Field(
         ..., description="Indicates if agile access is enabled for the assigned project"
     )
+
+
+class GetUsersAssignedToProjectInput(BaseModel):
+    """Model representing the input for retrieving users assigned to a project"""
+
+    projectId: Optional[uuid.UUID] = Field(
+        default=None,
+        description="ID of the project to retrieve assigned users for; falls back to the configured default when omitted",
+    )
+
+
+class GetUsersAssignedToProjectOutput(BaseModel):
+    """Model representing a user assigned to a project"""
+
+    userId: uuid.UUID = Field(
+        ...,
+        description="Register/user ID — use for assignedToUUID on create_defect",
+    )
+    empName: str = Field(
+        ...,
+        description="Display name — use for assignedTo and other name fields on create_defect",
+    )
+    empEmail: Optional[str] = Field(None, description="Email of the user")
+    empRole: Optional[str] = Field(None, description="Role of the user in the project")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_register_id(cls, data: object) -> object:
+        # Backend ProfileResponseDto uses "id"; create_defect expects assignedToUUID.
+        if isinstance(data, dict) and "userId" not in data and data.get("id"):
+            data = {**data, "userId": data["id"]}
+        return data
 
 
 class GetTestCasesWithFiltersInAProjectInput(BaseModel):
@@ -1606,3 +1639,97 @@ class SaveUtilsOutput(BaseModel):
         ..., description="List of created util items with their UUIDs"
     )
     count: int = Field(..., description="Total number of utils created")
+
+
+class CreateDefectInput(BaseModel):
+    """Model representing a Defect"""
+
+    title: str = Field(..., description="Title of the defect")
+    description: str = Field(..., description="Description of the defect")
+    status: str | None = None
+    priority: Literal["Minor", "Major", "Blocker", "Critical"] | None = Field(
+        default=None,
+        description="Defect priority — must be chosen from impact analysis, not left unset",
+    )
+    state: str | None = None
+    assignedTo: str | None = Field(
+        ..., description="Name of the user to whom the defect is assigned"
+    )
+    userId: uuid.UUID = Field(..., description="ID of the user creating the defect")
+    createdBy: str | None = Field(
+        ..., description="Name of the user creating the defect"
+    )
+    assignedBy: str | None = Field(
+        default=None,
+        description="Name of the user who assigned the defect — defaults to createdBy when omitted",
+    )
+    type: str | None = "Issue"
+    effort: str | None = None
+    dependency: str | None = Field(
+        default=None, description="Test case unique keys which are failed. Ex: TC-89765,TC-89099"
+    )
+    rootCause: str | None = "Other"
+    resolution: str | None = None
+    targetDate: str | None = Field(
+        default_factory=lambda: (datetime.now() + timedelta(days=3)).strftime(
+            "%d-%m-%Y"
+        )
+    )
+    comments: str | None = None
+    testMode: Literal["Web", "CLI", "Mobile", "API"] | None = "Web"
+    testType: (
+        Literal["Automation", "Manual", "AI Automated", "Regression", "Other"]
+     | None) = Field(
+        title="Test Method",
+        default="Manual",
+        description="Test Method for the defect accepting only 'Automation', 'Manual', 'AI Automated', 'Regression', or 'Other'",
+    )
+    testMethod: str | None = "Functional +Ve"
+    testPhase: str | None = "QA"
+    browser: str | None = None
+    environment: str | None = None
+    buildNumber: str | None = None
+    updatedBy: str | None = Field(
+        ..., description="Name of the user updating the defect"
+    )
+    developedBy: str | None = Field(
+        ..., description="Name of the user developing the defect"
+    )
+    verifiedBy: str | None = Field(
+        ..., description="Name of the user verifying the defect"
+    )
+    automatedBy: str | None = Field(
+        ..., description="Name of the user automating the defect"
+    )
+    reviewedBy: str | None = Field(
+        ..., description="Name of the user reviewing the defect"
+    )
+    module: uuid.UUID = Field(..., description="Module ID associated with the defect")
+    feature: uuid.UUID = Field(..., description="Feature ID associated with the defect")
+    sprint: uuid.UUID | None = Field(
+        default=None, description="Sprint ID associated with the defect"
+    )
+    story: uuid.UUID | None = Field(
+        default=None, description="Story ID associated with the defect"
+    )
+    projectId: uuid.UUID = Field(
+        ..., description="ID of the project for which the defect is being created"
+    )
+    companyId: uuid.UUID = Field(
+        ..., description="ID of the company for which the defect is being created"
+    )
+    assignedToUUID: uuid.UUID = Field(..., description="UUID of the user to whom the defect is assigned")
+
+    @model_validator(mode="after")
+    def _default_assigned_by(self) -> "CreateDefectInput":
+        if not self.assignedBy and self.createdBy:
+            self.assignedBy = self.createdBy
+        return self
+
+
+class CreateDefectOutput(BaseModel):
+    id: str = Field(..., description="ID of the created defect")
+    title: str = Field(..., description="Title of the created defect")
+    uniqueKey: str | None = Field(
+        None, description="Unique key generated for the created defect"
+    )

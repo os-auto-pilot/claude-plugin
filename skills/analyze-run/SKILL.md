@@ -1,6 +1,6 @@
 ---
 name: analyze-run
-description: Analyze a finished Oniesoft test run for top failure reasons, compare runs, or explain a stack trace in plain language. Use when the user asks why tests failed, what changed between runs, or to interpret a trace.
+description: Analyze a finished Oniesoft test run for top failure reasons, compare runs, or explain a stack trace in plain language. Offers to create grouped defects for unique failures after analysis. Use when the user asks why tests failed, what changed between runs, or to interpret a trace.
 ---
 
 # Analyze Oniesoft test runs
@@ -45,3 +45,15 @@ root cause and a concrete likely fix.
   expected value, confirm a real UI change, etc.).
 - Use names not raw UUIDs in the final output where available.
 - Surface any non-2xx HTTP errors verbatim.
+
+## After analysis — offer defect creation
+
+When the run has failures, ask after the report:
+
+> Do you want to create defects for the failed cases?
+
+- **No** → stop.
+- **Yes** → delegate to the `auto-pilot:defect-creator` subagent (do not call `create_defect` inline).
+  Pass the run ID, failure analysis, and `failed_cases`. The subagent follows
+  `create-defect` — one defect per unique failure reason with comma-separated unique keys
+  in `dependency`.
