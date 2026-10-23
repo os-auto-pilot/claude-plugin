@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "auto-pilot",
   "displayName": "auto-pilot by Oniesoft",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Drive the Oniesoft test platform from Claude Code: generate web/API/mobile test cases, run them (native mobile via Appium + self-healing semantic locators), and analyze failures.",
   "author": {
     "name": "Oniesoft"

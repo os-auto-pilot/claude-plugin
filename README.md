@@ -16,13 +16,13 @@ platform's capabilities as tools:
 | `server/` | Bundled MCP server — a thin HTTP client over the platform (`:8000`) and execution engine (`:3232`). No business logic; the backends do the work. |
 | `skills/` | Workflow playbooks: `create-tests`, `run-tests`, `mobile-testing`, `analyze-run`, `create-defect`. Claude invokes them automatically or via `/`. |
 | `agents/` | Subagents: `test-author`, `test-runner`, `failure-analyst`, `defect-creator`. |
-| `.mcp.json` | Registers the MCP server (API key read from workspace `.env` at runtime). |
-| `hooks/hooks.json` | SessionStart venv bootstrap (installs `mcp`+`httpx` into `${CLAUDE_PLUGIN_DATA}`). |
+| `.mcp.json` | Registers the MCP server, started through `server/venv_launcher.py` (API key read from workspace `.env` at runtime). |
+| `hooks/hooks.json` | SessionStart: builds the server's persistent venv under `${CLAUDE_PLUGIN_DATA}/venvs/` and registers the server with Claude Desktop. |
 
 ## Requirements
 
 - [Claude Code CLI](https://code.claude.com/docs/en/install)
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (the MCP server runs via `uv run`)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (builds the MCP server's venv and starts it)
 - Python 3.10+ (auto-installed by `uv` on first run if missing)
 - Running Oniesoft backends reachable from your machine:
   - platform API (`agentic_ai_be`), default `http://localhost:8000`

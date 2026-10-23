@@ -1,17 +1,16 @@
 """Launcher for the Oniesoft MCP server.
 
-Claude Code runs this via ``uv run --with-requirements server/requirements.txt``,
-which resolves/installs a compatible Python and dependencies before handing off
-here — cross-platform, with no bespoke venv-bootstrap code needed in this file.
+``server/venv_launcher.py`` runs this with the Python of the plugin's persistent
+venv, which already has ``server/requirements.txt`` installed — see that file
+for how the venv is built and shared across concurrent starts.
 
 Workspace-level credentials (``PLATFORM_API_KEY`` in ``.env`` or the OS
 environment) and per-project settings (company/user/project ID, API URLs in
 ``config.json``) are read from the user's project directory, not from Claude's
 ``userConfig`` UI — which the desktop app does not collect today.
 
-Run with ``--bootstrap-only`` (used by the SessionStart hook) to let `uv run`
-finish syncing dependencies and exit immediately, so the first tool call isn't
-delayed by the install.
+``--bootstrap-only`` makes this exit immediately. The SessionStart hook passes it
+to the venv launcher, which builds the venv and stops before reaching this file.
 """
 
 from __future__ import annotations

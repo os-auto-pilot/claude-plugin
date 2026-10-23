@@ -4,9 +4,9 @@
       "command": "uv",
       "args": [
         "run",
-        "--with-requirements", "${CLAUDE_PLUGIN_ROOT}/server/requirements.txt",
+        "--no-project",
         "--python", ">=3.10",
-        "${CLAUDE_PLUGIN_ROOT}/server/launch.py"
+        "${CLAUDE_PLUGIN_ROOT}/server/venv_launcher.py"
       ]
     }
   }

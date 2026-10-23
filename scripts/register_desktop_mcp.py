@@ -43,17 +43,22 @@ def _config_path() -> Path:
 
 
 def _server_entry(plugin_root: Path) -> dict:
-    requirements = str(plugin_root / "server" / "requirements.txt")
-    launch = str(plugin_root / "server" / "launch.py")
-    return {
+    launcher = str(plugin_root / "server" / "venv_launcher.py")
+    entry: dict = {
         "command": "uv",
         "args": [
             "run",
-            "--with-requirements", requirements,
+            "--no-project",
             "--python", ">=3.10",
-            launch,
+            launcher,
         ],
     }
+    # Desktop doesn't set CLAUDE_PLUGIN_DATA itself. Pass on the hook's value so
+    # Desktop and Claude Code share one venv (and one active-project snapshot).
+    data_dir = os.environ.get("CLAUDE_PLUGIN_DATA")
+    if data_dir:
+        entry["env"] = {"CLAUDE_PLUGIN_DATA": data_dir}
+    return entry
 
 
 def main() -> int:
